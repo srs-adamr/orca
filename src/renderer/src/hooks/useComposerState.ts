@@ -1365,14 +1365,15 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
           ...(trimmedNote ? { comment: trimmedNote } : {})
         })
 
-        const quickPrompt = linkedWorkItem
-          ? linkedWorkItem.number === 0 && trimmedNote
-            ? trimmedNote
-            : renderIssueCommandTemplate(DEFAULT_ISSUE_COMMAND_TEMPLATE, {
-                issueNumber: parsedLinkedIssueNumber,
-                artifactUrl: linkedWorkItem.url
-              })
-          : ''
+        // Why: when a linked work item is selected in the quick flow, launch
+        // the agent with a blank prompt and type the URL into its input as a
+        // draft (no trailing Enter). This lets the user review/edit before
+        // sending instead of auto-executing a "Complete <url>" template.
+        // Falls back to the trimmed note when the linked item carries no
+        // number/URL (Linear typed-only entries).
+        const isLinearTypedOnly = linkedWorkItem?.number === 0 && Boolean(trimmedNote)
+        const quickPrompt = isLinearTypedOnly && trimmedNote ? trimmedNote : ''
+        const quickDraftPrompt = linkedWorkItem && !isLinearTypedOnly ? linkedWorkItem.url : null
 
         const startupPlan =
           agent === null
@@ -1384,6 +1385,10 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
                 platform: CLIENT_PLATFORM,
                 allowEmptyPromptLaunch: true
               })
+
+        if (startupPlan && quickDraftPrompt) {
+          startupPlan.draftPrompt = quickDraftPrompt
+        }
 
         activateAndRevealWorktree(worktree.id, {
           setup: result.setup,

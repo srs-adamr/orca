@@ -200,11 +200,13 @@ export async function ensureAgentStartupInTerminal(args: {
   startup: AgentStartupPlan
 }): Promise<void> {
   const { worktreeId, startup } = args
-  if (startup.followupPrompt === null) {
+  const draftPrompt = startup.draftPrompt ?? null
+  if (startup.followupPrompt === null && draftPrompt === null) {
     return
   }
 
   let promptInjected = false
+  let draftInjected = false
 
   for (let attempt = 0; attempt < 30; attempt += 1) {
     if (attempt > 0) {
@@ -232,10 +234,21 @@ export async function ensureAgentStartupInTerminal(args: {
       if (agentOwnsForeground && !promptInjected && startup.followupPrompt) {
         window.api.pty.write(ptyId, `${startup.followupPrompt}\r`)
         promptInjected = true
-        return
       }
 
-      if (agentOwnsForeground && promptInjected) {
+      // Why: type the draft into the live agent input WITHOUT a trailing
+      // carriage return. The user wants the URL pre-filled so they can edit
+      // before sending — appending \r would auto-submit and defeat the point.
+      if (agentOwnsForeground && !draftInjected && draftPrompt) {
+        window.api.pty.write(ptyId, draftPrompt)
+        draftInjected = true
+      }
+
+      if (
+        agentOwnsForeground &&
+        (promptInjected || startup.followupPrompt === null) &&
+        (draftInjected || draftPrompt === null)
+      ) {
         return
       }
 
@@ -253,6 +266,22 @@ export async function ensureAgentStartupInTerminal(args: {
         // live session instead of launching the binary a second time.
         window.api.pty.write(ptyId, `${startup.followupPrompt}\r`)
         promptInjected = true
+      }
+      if (
+        !draftInjected &&
+        draftPrompt &&
+        hasChildProcesses &&
+        !isShellProcess(foreground) &&
+        attempt >= 4
+      ) {
+        window.api.pty.write(ptyId, draftPrompt)
+        draftInjected = true
+      }
+
+      if (
+        (promptInjected || startup.followupPrompt === null) &&
+        (draftInjected || draftPrompt === null)
+      ) {
         return
       }
     } catch {

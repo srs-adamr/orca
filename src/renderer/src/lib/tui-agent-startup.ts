@@ -5,6 +5,12 @@ export type AgentStartupPlan = {
   launchCommand: string
   expectedProcess: string
   followupPrompt: string | null
+  /** Why: text to type into the live agent input WITHOUT submitting it (no
+   * trailing \r). Used by the quick-create flow to pre-fill a linked work
+   * item URL so the user can edit/add to it before sending. Independent from
+   * `followupPrompt` so the call site can choose: type-and-submit (followup)
+   * or type-and-leave-pending (draft). */
+  draftPrompt?: string | null
 }
 
 function quoteStartupArg(value: string, platform: NodeJS.Platform): string {
