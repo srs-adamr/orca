@@ -284,6 +284,43 @@ describe('addWorktree', () => {
     ])
   })
 
+  it('treats --get success with empty stdout as "already set" (key present but blank)', async () => {
+    // Why: `git config --get key` exits 0 if the key has any value at any
+    // scope, including the unusual case of an explicitly empty string. We
+    // must not fall through to `--local set true` and overwrite that.
+    gitExecFileAsyncMock.mockResolvedValueOnce({ stdout: '' }) // worktree add
+    gitExecFileAsyncMock.mockResolvedValueOnce({ stdout: '' }) // config --get succeeds with empty value
+
+    await addWorktree('/repo', '/repo-feature', 'feature/test', 'origin/main')
+
+    expect(gitExecFileAsyncMock.mock.calls).toEqual([
+      [
+        ['worktree', 'add', '--no-track', '-b', 'feature/test', '/repo-feature', 'origin/main'],
+        { cwd: '/repo' }
+      ],
+      [['config', '--get', 'push.autoSetupRemote'], { cwd: '/repo-feature' }]
+    ])
+  })
+
+  it('does not probe or write config when worktree add itself fails', async () => {
+    // Why: a refactor that moves the config block earlier could try to write
+    // push.autoSetupRemote against a worktree directory that was never
+    // created. Pin the current ordering invariant: config calls happen only
+    // after worktree add succeeds.
+    gitExecFileAsyncMock.mockRejectedValueOnce(new Error('worktree add failed'))
+
+    await expect(
+      addWorktree('/repo', '/repo-feature', 'feature/test', 'origin/main')
+    ).rejects.toThrow('worktree add failed')
+
+    expect(gitExecFileAsyncMock.mock.calls).toEqual([
+      [
+        ['worktree', 'add', '--no-track', '-b', 'feature/test', '/repo-feature', 'origin/main'],
+        { cwd: '/repo' }
+      ]
+    ])
+  })
+
   it('fast-forwards with reset --hard when localBranch is checked out in primary worktree', async () => {
     const worktreeListOutput =
       'worktree /repo\nHEAD abc123\nbranch refs/heads/main\n\nworktree /repo-other\nHEAD def456\nbranch refs/heads/feature\n'
