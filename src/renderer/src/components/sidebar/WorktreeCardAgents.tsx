@@ -109,6 +109,11 @@ const WorktreeCardAgentsBody = React.memo(function WorktreeCardAgentsBody({
       const tabs = useAppStore.getState().tabsByWorktree[worktreeId] ?? []
       if (tabs.some((t) => t.id === tabId)) {
         activateTabAndFocusPane(tabId, stablePaneId, { ackPaneKeyOnSuccess: paneKey })
+      } else {
+        // Why: tab disappeared between render and click. Dismiss the row visibly
+        // (matching the malformed-paneKey branch above) so the user gets feedback
+        // instead of a silent no-op.
+        dismissStaleAgentRowByKey(paneKey)
       }
     },
     [worktreeId]

@@ -93,12 +93,28 @@ describe('layout stablePaneId persistence', () => {
     })
   })
 
-  it('reattaches snapshot UUIDs to the original leaves even when numeric ids are reassigned', () => {
+  it('hints snapshot UUIDs at mint time so cacheKey-capturing onPaneCreated sees them', () => {
+    // Why: capture each create call with its hint to assert the new contract —
+    // hints flow at mint time (rather than via adoptStablePaneId-after-mint),
+    // closing the race where onPaneCreated → connectPanePty would otherwise
+    // capture a freshly-minted UUID instead of the snapshot's UUID.
+    const initialCalls: { stablePaneIdHint?: string }[] = []
+    const splitCalls: { paneId: number; stablePaneIdHint?: string }[] = []
     const adopted: [number, string][] = []
     let nextPaneId = 1
     const manager = {
-      createInitialPane: () => ({ id: nextPaneId++ }),
-      splitPane: () => ({ id: nextPaneId++ }),
+      createInitialPane: (opts: { focus?: boolean; stablePaneIdHint?: string }) => {
+        initialCalls.push({ stablePaneIdHint: opts?.stablePaneIdHint })
+        return { id: nextPaneId++ }
+      },
+      splitPane: (
+        paneId: number,
+        _direction: string,
+        opts: { ratio?: number; stablePaneIdHint?: string }
+      ) => {
+        splitCalls.push({ paneId, stablePaneIdHint: opts?.stablePaneIdHint })
+        return { id: nextPaneId++ }
+      },
       adoptStablePaneId: (numericId: number, stablePaneId: string) => {
         adopted.push([numericId, stablePaneId])
       }
@@ -138,6 +154,21 @@ describe('layout stablePaneId persistence', () => {
       'leaf-c': 2,
       'leaf-b': 3
     })
+
+    // Initial pane corresponds to leaf-a (leftmost leaf of the snapshot root).
+    expect(initialCalls).toEqual([{ stablePaneIdHint: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }])
+    // First split creates pane 2 = leaf-c (leftmost of node.second of the
+    // outer split). Second split creates pane 3 = leaf-b (leftmost of
+    // node.second of the inner horizontal split).
+    expect(splitCalls).toEqual([
+      { paneId: 1, stablePaneIdHint: 'cccccccc-cccc-4ccc-8ccc-cccccccccccc' },
+      { paneId: 1, stablePaneIdHint: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }
+    ])
+
+    // adoptStablePaneId remains as a defensive late-binding fallback. Calls
+    // here are no-ops in production (the manager checks previousStable ===
+    // stablePaneId), but this fake doesn't model that — verify the leafId →
+    // numeric mapping was preserved instead.
     expect(adopted).toEqual([
       [1, 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa'],
       [3, 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb'],

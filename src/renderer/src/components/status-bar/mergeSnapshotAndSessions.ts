@@ -151,8 +151,9 @@ function resolveSnapshotSessionLabel(
 ): string {
   // Why: shared parsePaneKey rejects non-UUID suffixes so pre-migration
   // numeric paneKeys surviving in a daemon snapshot can't reach pane lookup.
-  const parsed = session.paneKey ? parsePaneKey(session.paneKey) : null
-  if (parsed) {
+  const paneKey = session.paneKey
+  const parsed = paneKey ? parsePaneKey(paneKey) : null
+  if (parsed && paneKey) {
     const tabs = ctx.tabsByWorktree[worktreeId] ?? []
     const tabIndex = tabs.findIndex((t) => t.id === parsed.tabId)
     const tab = tabIndex >= 0 ? tabs[tabIndex] : undefined
@@ -165,7 +166,7 @@ function resolveSnapshotSessionLabel(
       // runtimePaneTitlesByTabId is still indexed by the renderer-local
       // numeric paneId. Resolve through the store-backed mirror that
       // PaneManager populates on pane create/adopt/close.
-      const numericId = ctx.numericPaneIdByPaneKey[session.paneKey ?? '']
+      const numericId = ctx.numericPaneIdByPaneKey[paneKey]
       const runtime =
         typeof numericId === 'number'
           ? ctx.runtimePaneTitlesByTabId[parsed.tabId]?.[numericId]?.trim()

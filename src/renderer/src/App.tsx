@@ -179,6 +179,16 @@ function App(): React.JSX.Element {
   const tabsByWorktree = useAppStore((s) => s.tabsByWorktree)
   const activeTabId = useAppStore((s) => s.activeTabId)
   const worktreesByRepo = useAppStore((s) => s.worktreesByRepo)
+  // Why: countWorkingAgents reads only tabsByWorktree, runtimePaneTitlesByTabId,
+  // and worktreesByRepo. Excluding numericPaneIdByPaneKey here avoids forcing
+  // the titlebar working-agent count to recompute on every pane create/close.
+  const countingInputs = useAppStore(
+    useShallow((s) => ({
+      tabsByWorktree: s.tabsByWorktree,
+      runtimePaneTitlesByTabId: s.runtimePaneTitlesByTabId,
+      worktreesByRepo: s.worktreesByRepo
+    }))
+  )
   const agentInputs = useAppStore(
     useShallow((s) => ({
       tabsByWorktree: s.tabsByWorktree,
@@ -187,7 +197,7 @@ function App(): React.JSX.Element {
       worktreesByRepo: s.worktreesByRepo
     }))
   )
-  const activeAgentCount = useMemo(() => countWorkingAgents(agentInputs), [agentInputs])
+  const activeAgentCount = useMemo(() => countWorkingAgents(countingInputs), [countingInputs])
   const workingAgentsPerWorktree = useMemo(
     () => getWorkingAgentsPerWorktree(agentInputs),
     [agentInputs]

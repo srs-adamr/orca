@@ -42,6 +42,7 @@ import { toPublicPane } from './pane-public-view'
 import { applyTerminalGpuAcceleration } from './pane-terminal-gpu-acceleration'
 import { reattachWebglIfNeeded } from './pane-webgl-reattach'
 import { mintStablePaneId } from './mint-stable-pane-id'
+import { isStablePaneId } from '../../../../shared/stable-pane-id'
 
 export type { PaneManagerOptions, PaneStyleOptions, ManagedPane, DropZone }
 
@@ -70,8 +71,11 @@ export class PaneManager {
     this.renderingSuspended = options.initialRenderingSuspended === true
   }
 
-  createInitialPane(opts?: { focus?: boolean }): ManagedPane {
-    const pane = this.createPaneInternal()
+  createInitialPane(opts?: { focus?: boolean; stablePaneIdHint?: string }): ManagedPane {
+    // Why: layout replay passes the snapshot's stablePaneId at mint time so
+    // onPaneCreated → connectPanePty captures the correct cacheKey synchronously.
+    // See replayTerminalLayout for context.
+    const pane = this.createPaneInternal(opts?.stablePaneIdHint)
     Object.assign(pane.container.style, {
       width: '100%',
       height: '100%',
@@ -94,17 +98,20 @@ export class PaneManager {
   splitPane(
     paneId: number,
     direction: 'vertical' | 'horizontal',
-    opts?: { ratio?: number; cwd?: string }
+    opts?: { ratio?: number; cwd?: string; stablePaneIdHint?: string }
   ): ManagedPane | null {
     const existing = this.panes.get(paneId)
     if (!existing) {
       return null
     }
-    const newPane = this.createPaneInternal()
     const parent = existing.container.parentElement
     if (!parent) {
       return null
     }
+    // Why: layout replay passes the snapshot's stablePaneId at mint time so
+    // onPaneCreated → connectPanePty captures the correct cacheKey synchronously.
+    // See replayTerminalLayout for context.
+    const newPane = this.createPaneInternal(opts?.stablePaneIdHint)
 
     const isVertical = direction === 'vertical'
     const divider = this.createDividerWrapped(isVertical)
@@ -153,26 +160,32 @@ export class PaneManager {
     if (!pane) {
       return
     }
-    const paneContainer = pane.container
-    const parent = paneContainer.parentElement
-    if (!parent) {
-      return
-    }
+    // Why: clean up stableId state FIRST so an early-return below (e.g. detached
+    // container) still releases the pane's mirror entry. The DOM-layout cleanup
+    // below is purely cosmetic for an already-orphaned container.
     const closedStableId = pane.stablePaneId
-    disposePane(pane, this.panes)
     this.stableIdByNumericId.delete(paneId)
     if (closedStableId) {
       this.numericIdByStableId.delete(closedStableId)
     }
     this.options.onStableIdReleased?.(paneId, closedStableId)
-    if (parent.classList.contains('pane-split')) {
-      const siblings = findPaneChildren(parent)
-      const sibling = siblings.find((c) => c !== paneContainer) ?? null
-      paneContainer.remove()
-      removeDividers(parent)
-      promoteSibling(sibling, parent, this.root)
-    } else {
-      paneContainer.remove()
+    const paneContainer = pane.container
+    const parent = paneContainer.parentElement
+    disposePane(pane, this.panes)
+    // Why: only the DOM-layout shuffling depends on a non-null parent. Active
+    // pane reassignment + onPaneClosed + onLayoutChanged must run on both
+    // paths so the lifecycle hook can persist the post-close layout snapshot
+    // and consumers don't observe activePaneId pointing at a disposed pane.
+    if (parent) {
+      if (parent.classList.contains('pane-split')) {
+        const siblings = findPaneChildren(parent)
+        const sibling = siblings.find((c) => c !== paneContainer) ?? null
+        paneContainer.remove()
+        removeDividers(parent)
+        promoteSibling(sibling, parent, this.root)
+      } else {
+        paneContainer.remove()
+      }
     }
     if (this.activePaneId === paneId) {
       const next = this.panes.values().next().value as ManagedPaneInternal | undefined
@@ -306,9 +319,20 @@ export class PaneManager {
     }
   }
 
-  private createPaneInternal(): ManagedPaneInternal {
+  private createPaneInternal(stablePaneIdHint?: string): ManagedPaneInternal {
     const id = this.nextPaneId++
-    const stablePaneId = mintStablePaneId()
+    // Why: when layout replay supplies the snapshot's UUID at mint time, the
+    // pane is born with its persisted identity. This eliminates the race where
+    // adoptStablePaneId-after-mint would lose to onPaneCreated → connectPanePty
+    // capturing the freshly-minted UUID synchronously. Fall back to mint when
+    // no hint, when the hint isn't a valid v4 UUID, or when it's already bound
+    // to another live pane (corrupt snapshot / sibling collision).
+    const stablePaneId =
+      stablePaneIdHint &&
+      isStablePaneId(stablePaneIdHint) &&
+      !this.numericIdByStableId.has(stablePaneIdHint)
+        ? stablePaneIdHint
+        : mintStablePaneId()
     const pane = createPaneDOM(
       id,
       stablePaneId,
@@ -353,6 +377,13 @@ export class PaneManager {
   adoptStablePaneId(numericId: number, stablePaneId: string): void {
     const pane = this.panes.get(numericId)
     if (!pane) {
+      return
+    }
+    // Why: snapshots can carry corrupt non-UUID values (e.g. legacy or
+    // hand-edited). Reject here so the manager's invariant — every entry
+    // in numericIdByStableId is a v4 UUID — holds even when callers
+    // bypass createPaneInternal's mint-time validation.
+    if (!isStablePaneId(stablePaneId)) {
       return
     }
     const previousStable = pane.stablePaneId

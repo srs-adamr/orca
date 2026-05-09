@@ -215,6 +215,38 @@ describe('PaneManager — stablePaneId', () => {
     }
   })
 
+  it('finalizes close when the active pane container is already detached', () => {
+    const closed = vi.fn()
+    const layoutChanged = vi.fn()
+    const released = vi.fn()
+    const mgr = new PaneManager(makeFakeElement(), {
+      onPaneClosed: closed,
+      onLayoutChanged: layoutChanged,
+      onStableIdReleased: released
+    })
+    const first = mgr.createInitialPane({ focus: false })
+    const second = mgr.splitPane(first.id, 'vertical')
+    if (!second) {
+      throw new Error('expected splitPane to create a pane')
+    }
+
+    // Why: this test's wrapInSplit mock leaves the new pane detached, matching
+    // the closePane edge that previously returned before finalization.
+    expect(mgr.getActivePane()?.id).toBe(second.id)
+    layoutChanged.mockClear()
+
+    mgr.closePane(second.id)
+
+    expect(mgr.getPanes().map((pane) => pane.id)).toEqual([first.id])
+    expect(mgr.getActivePane()?.id).toBe(first.id)
+    expect(mgr.getNumericIdForStable(second.stablePaneId)).toBeNull()
+    expect(released).toHaveBeenCalledTimes(1)
+    expect(released).toHaveBeenCalledWith(second.id, second.stablePaneId)
+    expect(closed).toHaveBeenCalledTimes(1)
+    expect(closed).toHaveBeenCalledWith(second.id, second.stablePaneId)
+    expect(layoutChanged).toHaveBeenCalledTimes(1)
+  })
+
   it('adoptStablePaneId rebinds the snapshot UUID and drops the previous mapping', () => {
     const mgr = new PaneManager(makeFakeElement(), {})
     const pane = mgr.createInitialPane({ focus: false })
@@ -307,5 +339,24 @@ describe('PaneManager — stablePaneId', () => {
     expect(mgr.getStablePaneId(paneA.id)).toBe(sharedId)
     expect(mgr.getNumericIdForStable(siblingMinted)).toBe(siblingId)
     expect(mgr.getStablePaneId(siblingId)).toBe(siblingMinted)
+  })
+
+  it('adoptStablePaneId rejects a non-UUID value and keeps the minted UUID', () => {
+    // Why: layout-serialization's late-binding loop calls adoptStablePaneId
+    // for every snapshot entry. A corrupt non-UUID would otherwise overwrite
+    // the freshly-minted UUID, breaking IPC ingress (parsePaneKey) routing.
+    const adopted: string[] = []
+    const mgr = new PaneManager(makeFakeElement(), {
+      onStableIdAdopted: (id, stable) => adopted.push(`${id}:${stable}`)
+    })
+    const pane = mgr.createInitialPane({ focus: false })
+    const minted = pane.stablePaneId
+
+    mgr.adoptStablePaneId(pane.id, 'not-a-uuid')
+
+    expect(mgr.getStablePaneId(pane.id)).toBe(minted)
+    expect(mgr.getNumericIdForStable('not-a-uuid')).toBeNull()
+    expect(mgr.getNumericIdForStable(minted)).toBe(pane.id)
+    expect(adopted).toEqual([])
   })
 })

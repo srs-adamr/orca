@@ -94,17 +94,18 @@ export function computeAutoAckTargets(
 // The effect subscribes directly to the store (not via React selectors) so it
 // sees every state change with no re-render amplification up the component
 // tree. A reference-equality guard inside the callback bails out immediately
-// when none of the five slices we care about (activeView, activeTabId,
-// agentStatusByPaneKey, retainedAgentsByPaneKey, acknowledgedAgentsByPaneKey)
-// have changed — so the Object.entries walk only runs for updates
-// that could legitimately affect the ack decision.
+// when none of the six slices we care about (activeView, activeTabId,
+// agentStatusByPaneKey, retainedAgentsByPaneKey, acknowledgedAgentsByPaneKey,
+// terminalLayoutsByTabId) have changed — so the Object.entries walk only
+// runs for updates that could legitimately affect the ack decision.
 //
 // It acks whenever:
 //   - activeView is 'terminal' (the user isn't on Settings/Tasks), AND
 //   - activeTabId identifies a live tab, AND
-//   - at least one agentStatusByPaneKey entry OR retainedAgentsByPaneKey
-//     entry has paneKey prefixed by `${activeTabId}:` AND its
-//     ackAt < stateStartedAt.
+//   - an agentStatusByPaneKey entry OR retainedAgentsByPaneKey entry has
+//     paneKey is `${activeTabId}:${activeLeafStablePaneId}` (the active
+//     leaf — equality, not prefix, so split-tab siblings don't get acked)
+//     AND its ackAt < stateStartedAt.
 //
 // Why both maps: the inline-agents list renders the union of live + retained
 // rows (see useWorktreeAgentRows), so the ack scan must too. Without the
@@ -207,7 +208,7 @@ export function useAutoAckViewedAgent(): void {
     // Why: store.subscribe fires on every state change. The reference-
     // equality guard above bails out immediately for the common case
     // (terminal output, timers, etc.) so the Object.entries walk only runs
-    // when one of the five slices we read has actually changed.
+    // when one of the six slices we read has actually changed.
     const unsubscribe = useAppStore.subscribe(maybeAck)
     // Why: focus/visibility don't flow through the zustand store, so a
     // late-arriving transition that failed the gate above never re-evaluates

@@ -117,6 +117,9 @@ export function connectPanePty(
   // pane renumber. The same string crosses the IPC boundary as
   // ORCA_PANE_KEY, so external hooks route their events back to the
   // correct pane post-restore.
+  // Why safe to capture synchronously: replayTerminalLayout now hints the
+  // snapshot UUID at mint time (createInitialPane/splitPane), so
+  // pane.stablePaneId is stable-from-mint by the time onPaneCreated fires.
   const cacheKey = makePaneKey(deps.tabId, pane.stablePaneId)
   const pendingSpawnKey = `${deps.tabId}:${paneLeafId(pane.id)}`
 

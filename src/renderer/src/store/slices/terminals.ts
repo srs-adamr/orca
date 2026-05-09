@@ -501,6 +501,15 @@ export const createTerminalSlice: StateCreator<AppState, [], [], TerminalSlice> 
           delete nextCacheTimer[key]
         }
       }
+      // Why: defensive sweep parallel to cacheTimerByKey — pane-manager destroy
+      // callbacks normally clear these entries, but may not have fired yet in
+      // the inter-frame window where the tab is already gone from tabsByWorktree.
+      const nextNumericPaneIdByPaneKey = { ...s.numericPaneIdByPaneKey }
+      for (const key of Object.keys(nextNumericPaneIdByPaneKey)) {
+        if (key.startsWith(`${tabId}:`)) {
+          delete nextNumericPaneIdByPaneKey[key]
+        }
+      }
       // Why: keep activeTabIdByWorktree in sync when a tab is closed in a
       // background worktree. Without this, the remembered tab becomes stale
       // and restoring it on worktree switch falls back to tabs[0].
@@ -559,6 +568,7 @@ export const createTerminalSlice: StateCreator<AppState, [], [], TerminalSlice> 
         pendingSetupSplitByTabId: nextPendingSetupSplitByTabId,
         pendingIssueCommandSplitByTabId: nextPendingIssueCommandSplitByTabId,
         cacheTimerByKey: nextCacheTimer,
+        numericPaneIdByPaneKey: nextNumericPaneIdByPaneKey,
         tabBarOrderByWorktree: nextTabBarOrderByWorktree,
         pendingSnapshotByPtyId: nextSnapshots,
         pendingColdRestoreByPtyId: nextColdRestores
