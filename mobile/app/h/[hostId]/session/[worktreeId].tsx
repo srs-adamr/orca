@@ -985,6 +985,7 @@ export default function SessionScreen() {
       router.back()
       return
     }
+    Keyboard.dismiss()
     setLeaveDrafts(dirtyDrafts)
   }, [getDirtyMarkdownDrafts, router])
 
@@ -1007,6 +1008,7 @@ export default function SessionScreen() {
         void readMarkdownTab(tab)
         return
       }
+      Keyboard.dismiss()
       setDiscardMarkdownTarget(tab)
     },
     [markdownDocs, readMarkdownTab]
