@@ -3,7 +3,7 @@ import { getWorktreeStatusLabel } from '@/lib/worktree-status'
 import StatusIndicator from './StatusIndicator'
 import { useWorktreeActivityStatus } from './use-worktree-activity-status'
 
-export function LineageChildStatusIndicator({
+export function WorktreeActivityStatusIndicator({
   worktreeId,
   className
 }: {

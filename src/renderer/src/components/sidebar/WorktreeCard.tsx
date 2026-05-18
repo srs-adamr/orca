@@ -15,14 +15,13 @@ import {
   ServerOff,
   Workflow
 } from 'lucide-react'
-import StatusIndicator from './StatusIndicator'
 import CacheTimer from './CacheTimer'
 import WorktreeContextMenu from './WorktreeContextMenu'
 import { SshDisconnectedDialog } from './SshDisconnectedDialog'
 import WorktreeCardAgents from './WorktreeCardAgents'
+import { WorktreeActivityStatusIndicator } from './WorktreeActivityStatusIndicator'
 import { cn } from '@/lib/utils'
 import { activateAndRevealWorktree } from '@/lib/worktree-activation'
-import { getWorktreeStatusLabel } from '@/lib/worktree-status'
 import { getRepoKindLabel, isFolderRepo } from '../../../../shared/repo-kind'
 import type { HostedReviewInfo } from '../../../../shared/hosted-review'
 import type { Worktree, Repo, IssueInfo, LinearIssue } from '../../../../shared/types'
@@ -33,7 +32,6 @@ import {
   hasWorktreeCardDetails
 } from './WorktreeCardMeta'
 import { writeWorkspaceDragData } from './workspace-status'
-import { useWorktreeActivityStatus } from './use-worktree-activity-status'
 import { getWorktreeCardPrDisplay } from './worktree-card-pr-display'
 
 type WorktreeCardProps = {
@@ -211,8 +209,6 @@ const WorktreeCard = React.memo(function WorktreeCard({
         }
     : null
   const isDeleting = deleteState?.isDeleting ?? false
-
-  const status = useWorktreeActivityStatus(worktree.id)
 
   const showPR = cardProps.includes('pr')
   const showIssue = cardProps.includes('issue')
@@ -431,10 +427,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
       {(cardProps.includes('status') || cardProps.includes('unread')) && (
         <div className="flex flex-col items-center justify-start pt-[2px] gap-2 shrink-0">
           {cardProps.includes('status') && (
-            <>
-              <StatusIndicator status={status} aria-hidden="true" />
-              <span className="sr-only">{getWorktreeStatusLabel(status)}</span>
-            </>
+            <WorktreeActivityStatusIndicator worktreeId={worktree.id} />
           )}
 
           {cardProps.includes('unread') && (

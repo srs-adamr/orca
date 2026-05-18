@@ -14,8 +14,8 @@ import {
 } from '@/store/selectors'
 import WorktreeCard from './WorktreeCard'
 import WorktreeCardAgents from './WorktreeCardAgents'
-import { LineageChildStatusIndicator } from './LineageChildStatusIndicator'
 import { SshDisconnectedDialog } from './SshDisconnectedDialog'
+import { WorktreeActivityStatusIndicator } from './WorktreeActivityStatusIndicator'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import {
@@ -1136,7 +1136,7 @@ const VirtualizedWorktreeViewport = React.memo(function VirtualizedWorktreeViewp
                     onDoubleClick={(event) => event.stopPropagation()}
                   >
                     <span className="mt-[2px] flex w-4 shrink-0 justify-center pt-[2px]">
-                      <LineageChildStatusIndicator worktreeId={child.worktree.id} />
+                      <WorktreeActivityStatusIndicator worktreeId={child.worktree.id} />
                     </span>
                     <div className="min-w-0 flex-1">
                       <div className="truncate text-[12px] leading-tight text-foreground">
