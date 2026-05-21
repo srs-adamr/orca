@@ -15,6 +15,7 @@
 
 import { z } from 'zod'
 import { FEATURE_WALL_MAX_DWELL_MS } from './feature-wall-telemetry'
+import { SETUP_SCRIPT_IMPORT_PROVIDERS } from './setup-script-import-providers'
 
 import { AGENT_HOOK_TARGETS } from './agent-hook-types'
 import { ONBOARDING_FINAL_STEP } from './constants'
@@ -110,6 +111,9 @@ export const addRepoExistingWorkspaceSourceSchema = z.enum([
   'create_project'
 ])
 export type AddRepoExistingWorkspaceSource = z.infer<typeof addRepoExistingWorkspaceSourceSchema>
+
+export const setupScriptImportProviderSchema = z.enum(SETUP_SCRIPT_IMPORT_PROVIDERS)
+export type SetupScriptImportProviderTelemetry = z.infer<typeof setupScriptImportProviderSchema>
 
 // Deliberately a separate enum from `errorClassSchema` (PTY-spawn taxonomy):
 // different domain — this one buckets git/filesystem failures thrown by
@@ -334,6 +338,26 @@ const workspaceCreateFailedSchema = z
     source: workspaceSourceSchema,
     error_class: workspaceCreateErrorClassSchema,
     nth_repo_added: nthRepoAddedSchema
+  })
+  .strict()
+
+const setupScriptPromptModeSchema = z.enum(['import_available', 'configure_needed'])
+const setupScriptCountBucketSchema = z.enum(['0', '1', '2-3', '4+'])
+const setupScriptPromptContextSchema = {
+  mode: setupScriptPromptModeSchema,
+  provider: setupScriptImportProviderSchema.optional(),
+  file_count_bucket: setupScriptCountBucketSchema,
+  unsupported_field_count_bucket: setupScriptCountBucketSchema,
+  has_shared_hooks: z.boolean(),
+  nth_repo_added: nthRepoAddedSchema
+} as const
+// Why: setup-import telemetry is for a retention cohort, not debugging a
+// user's repo, so it carries only closed enums and count buckets.
+const setupScriptPromptShownSchema = z.object(setupScriptPromptContextSchema).strict()
+const setupScriptPromptActionSchema = z
+  .object({
+    ...setupScriptPromptContextSchema,
+    action: z.enum(['import_completed', 'import_failed', 'configure_clicked', 'dismissed'])
   })
   .strict()
 
@@ -748,6 +772,8 @@ export const eventSchemas = {
   add_repo_existing_workspaces_detected: addRepoExistingWorkspacesDetectedSchema,
   workspace_created: workspaceCreatedSchema,
   workspace_create_failed: workspaceCreateFailedSchema,
+  setup_script_prompt_shown: setupScriptPromptShownSchema,
+  setup_script_prompt_action: setupScriptPromptActionSchema,
 
   agent_started: agentStartedSchema,
   agent_error: agentErrorSchema,
@@ -830,6 +856,8 @@ type _CohortExtendedRoster =
   | 'add_repo_existing_workspaces_detected'
   | 'workspace_created'
   | 'workspace_create_failed'
+  | 'setup_script_prompt_shown'
+  | 'setup_script_prompt_action'
   | 'agent_started'
   | 'agent_error'
 // Why: `z.object({}).strict()` infers a string index signature, which would

@@ -1,6 +1,5 @@
 import { inspectCodexEnvironmentConfig } from './setup-script-import-codex-environment'
-
-export type SetupScriptImportProvider = 'superset' | 'conductor' | 'codex' | 'cmux'
+import type { SetupScriptImportProvider } from './setup-script-import-providers'
 
 export type SetupScriptImportCandidate = {
   provider: SetupScriptImportProvider

@@ -1,10 +1,11 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Download, LoaderCircle, Settings, X } from 'lucide-react'
 import { toast } from 'sonner'
 import { useAppStore } from '@/store'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
+import { track } from '@/lib/telemetry'
 import { cn } from '@/lib/utils'
 import { getRepositoryLocalCommandsSectionId } from '@/components/settings/repository-settings-targets'
 import {
@@ -17,6 +18,10 @@ import { normalizeHookCommandSourcePolicy } from '../../../../shared/hook-comman
 import { isGitRepoKind } from '../../../../shared/repo-kind'
 import type { Repo, RepoHookSettings } from '../../../../shared/types'
 import type { SetupScriptImportCandidate } from '../../../../shared/setup-script-imports'
+import {
+  buildSetupScriptPromptActionTelemetry,
+  buildSetupScriptPromptTelemetry
+} from '../../../../shared/setup-script-telemetry'
 
 type PromptState = {
   repoId: string
@@ -95,6 +100,7 @@ function SetupScriptPromptCard(): React.JSX.Element | null {
   const dismissSetupScriptPrompt = useAppStore((s) => s.dismissSetupScriptPrompt)
   const [promptState, setPromptState] = useState<PromptState | null>(null)
   const [isImporting, setIsImporting] = useState(false)
+  const trackedPromptKeysRef = useRef<Set<string>>(new Set())
 
   const activeRepo = useMemo(
     () => repos.find((repo) => repo.id === activeRepoId) ?? null,
@@ -171,18 +177,72 @@ function SetupScriptPromptCard(): React.JSX.Element | null {
     [openSettingsPage, openSettingsTarget, setSettingsSearchQuery]
   )
 
+  useEffect(() => {
+    if (
+      !sidebarOpen ||
+      !activeRepo ||
+      !isGitRepoKind(activeRepo) ||
+      isDismissed ||
+      promptState?.repoId !== activeRepo.id ||
+      promptState.hasEffectiveSetup
+    ) {
+      return
+    }
+
+    const telemetry = buildSetupScriptPromptTelemetry(
+      promptState.candidate,
+      promptState.hasSharedHooks
+    )
+    // Why: React may re-render the sidebar often; this event should represent
+    // a distinct prompt exposure for this repo/source, not render churn.
+    const promptKey = [
+      activeRepo.id,
+      telemetry.mode,
+      telemetry.provider ?? 'none',
+      telemetry.file_count_bucket,
+      telemetry.unsupported_field_count_bucket,
+      String(telemetry.has_shared_hooks)
+    ].join(':')
+    if (trackedPromptKeysRef.current.has(promptKey)) {
+      return
+    }
+
+    trackedPromptKeysRef.current.add(promptKey)
+    track('setup_script_prompt_shown', telemetry)
+  }, [activeRepo, isDismissed, promptState, sidebarOpen])
+
   const handleConfigure = useCallback(() => {
     if (!activeRepo) {
       return
     }
+    if (promptState?.repoId === activeRepo.id && !promptState.hasEffectiveSetup) {
+      track(
+        'setup_script_prompt_action',
+        buildSetupScriptPromptActionTelemetry(
+          'configure_clicked',
+          promptState.candidate,
+          promptState.hasSharedHooks
+        )
+      )
+    }
     openLocalCommandSettings(activeRepo.id)
-  }, [activeRepo, openLocalCommandSettings])
+  }, [activeRepo, openLocalCommandSettings, promptState])
 
   const handleDismiss = useCallback(() => {
     if (activeRepo) {
+      if (promptState?.repoId === activeRepo.id && !promptState.hasEffectiveSetup) {
+        track(
+          'setup_script_prompt_action',
+          buildSetupScriptPromptActionTelemetry(
+            'dismissed',
+            promptState.candidate,
+            promptState.hasSharedHooks
+          )
+        )
+      }
       dismissSetupScriptPrompt(activeRepo.id)
     }
-  }, [activeRepo, dismissSetupScriptPrompt])
+  }, [activeRepo, dismissSetupScriptPrompt, promptState])
 
   const handleImport = useCallback(async () => {
     if (!activeRepo || !promptState?.candidate) {
@@ -198,9 +258,25 @@ function SetupScriptPromptCard(): React.JSX.Element | null {
       )
       const didUpdate = await updateRepo(activeRepo.id, { hookSettings: nextSettings })
       if (!didUpdate) {
+        track(
+          'setup_script_prompt_action',
+          buildSetupScriptPromptActionTelemetry(
+            'import_failed',
+            promptState.candidate,
+            promptState.hasSharedHooks
+          )
+        )
         toast.error('Failed to import setup script')
         return
       }
+      track(
+        'setup_script_prompt_action',
+        buildSetupScriptPromptActionTelemetry(
+          'import_completed',
+          promptState.candidate,
+          promptState.hasSharedHooks
+        )
+      )
       setPromptState((current) =>
         current?.repoId === activeRepo.id ? { ...current, hasEffectiveSetup: true } : current
       )
@@ -215,6 +291,17 @@ function SetupScriptPromptCard(): React.JSX.Element | null {
           onClick: () => openLocalCommandSettings(importedRepoId)
         }
       })
+    } catch (error) {
+      track(
+        'setup_script_prompt_action',
+        buildSetupScriptPromptActionTelemetry(
+          'import_failed',
+          promptState.candidate,
+          promptState.hasSharedHooks
+        )
+      )
+      console.warn('[setup-script-prompt] Failed to import setup script:', error)
+      toast.error('Failed to import setup script')
     } finally {
       setIsImporting(false)
     }
