@@ -1103,8 +1103,19 @@ function App(): React.JSX.Element {
         return
       }
 
+      // Why: only short-circuit chords the floating panel's own keydown
+      // handler claims (Cmd/Ctrl+T, Cmd/Ctrl+W, Cmd/Ctrl+Shift+B/M). Other
+      // app-level mod shortcuts (B, L, Shift+E/F/G) have no panel-level
+      // counterpart, so suppressing them here would silently no-op when
+      // focus lives inside the floating panel.
       if (isFloatingWorkspacePanelFocused()) {
-        return
+        const key = e.key.toLowerCase()
+        const panelClaimsChord = e.shiftKey
+          ? !e.altKey && (key === 'b' || key === 'm')
+          : !e.altKey && (key === 't' || key === 'w')
+        if (panelClaimsChord) {
+          return
+        }
       }
 
       // Why: after the last floating tab is closed, the empty overlay has no
