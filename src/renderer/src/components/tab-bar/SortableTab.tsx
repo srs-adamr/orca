@@ -101,6 +101,7 @@ export default function SortableTab({
   // (e.g. showing the bell without the wash, or vice versa).
   const showActivityAffordance = hasUnreadActivity && !isEditing
   const [renameValue, setRenameValue] = useState('')
+  const renameFocusFrameRef = useRef<number | null>(null)
   // Why: React's synthetic onBlur fires during the Input's unmount when isEditing flips
   // to false. Without this guard, pressing Escape (or committing via Enter) would cause
   // the blur handler to run commitRename a second time and overwrite the title with the
@@ -134,13 +135,20 @@ export default function SortableTab({
   }, [])
 
   const setRenameInputElement = useCallback((input: HTMLInputElement | null) => {
+    if (renameFocusFrameRef.current !== null) {
+      cancelAnimationFrame(renameFocusFrameRef.current)
+      renameFocusFrameRef.current = null
+    }
     if (!input) {
       return
     }
-    // Why: focus/select only when the inline input mounts; terminal title updates
-    // during editing must not re-select the user's in-progress rename text.
-    input.focus()
-    input.select()
+    // Why: defer past Radix menu teardown/focus restore while still keying off
+    // input mount only; terminal title updates must not re-select in-progress text.
+    renameFocusFrameRef.current = requestAnimationFrame(() => {
+      renameFocusFrameRef.current = null
+      input.focus()
+      input.select()
+    })
   }, [])
 
   useEffect(() => {
