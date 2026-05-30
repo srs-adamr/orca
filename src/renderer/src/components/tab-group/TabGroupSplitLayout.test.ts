@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const setTabGroupSplitRatioMock = vi.fn()
 const recordFeatureInteractionMock = vi.fn()
+const setDragRootNodeMock = vi.fn()
 const useAppStoreMock = vi.fn(
   (
     selector: (state: {
@@ -37,7 +38,8 @@ vi.mock('./useTabDragSplit', () => ({
     onDragMove: vi.fn(),
     onDragOver: vi.fn(),
     onDragStart: vi.fn(),
-    sensors: []
+    sensors: [],
+    setDragRootNode: setDragRootNodeMock
   })
 }))
 
@@ -47,6 +49,7 @@ describe('TabGroupSplitLayout', () => {
   beforeEach(() => {
     setTabGroupSplitRatioMock.mockClear()
     recordFeatureInteractionMock.mockClear()
+    setDragRootNodeMock.mockClear()
     useAppStoreMock.mockClear()
   })
 
