@@ -16,6 +16,7 @@ import {
   Server,
   ServerOff,
   Star,
+  Trash2,
   Workflow
 } from 'lucide-react'
 import CacheTimer, { usePromptCacheCountdownStartedAt } from './CacheTimer'
@@ -48,8 +49,13 @@ import { getWorkspacePortsByWorktreeId } from '@/lib/workspace-port-groups'
 import { RepoBadgeMark } from '@/components/repo/RepoBadgeLabel'
 import { installWindowVisibilityInterval, isWindowVisible } from '@/lib/window-visibility-interval'
 import { isMacAppDataPath } from '@/lib/passive-macos-app-data-access'
+import { runWorktreeDelete } from './delete-worktree-flow'
 import { WorktreeTitleInlineRename } from './WorktreeTitleInlineRename'
 import { getWorktreeCompletionAction } from './worktree-completion-action'
+import {
+  canShowWorkspaceDeleteQuickAction,
+  useWorkspaceDeleteModifierPressed
+} from './workspace-delete-quick-action'
 
 type WorktreeCardProps = {
   worktree: Worktree
@@ -249,6 +255,8 @@ const WorktreeCard = React.memo(function WorktreeCard({
         }
     : null
   const isDeleting = deleteState?.isDeleting ?? false
+  const deleteModifierPressed = useWorkspaceDeleteModifierPressed()
+
   const showPR = cardProps.includes('pr')
   const showIssue = cardProps.includes('issue')
   const showLinearIssue = cardProps.includes('linear-issue')
@@ -429,15 +437,29 @@ const WorktreeCard = React.memo(function WorktreeCard({
   // workspaces where a delete hover action would be too risky.
   const completionAction = getWorktreeCompletionAction([worktree], workspaceStatuses)
   const completionTargetStatus = completionAction?.targetStatus
+  // Why: delete is destructive, so it only appears while the user is holding
+  // Option/Alt instead of being part of the ordinary hover chrome.
+  const showDeleteQuickAction = canShowWorkspaceDeleteQuickAction({
+    deleteModifierPressed,
+    isDeleting,
+    isMainWorktree: worktree.isMainWorktree
+  })
+  const showCompletionQuickAction =
+    completionAction != null && !isDeleting && !showDeleteQuickAction
+  const showWorkspaceQuickAction = showDeleteQuickAction || showCompletionQuickAction
   const handleWorkspaceQuickAction = useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
       event.preventDefault()
       event.stopPropagation()
+      if (showDeleteQuickAction) {
+        runWorktreeDelete(worktree.id)
+        return
+      }
       if (completionTargetStatus) {
         updateWorktreeMeta(worktree.id, { workspaceStatus: completionTargetStatus })
       }
     },
-    [completionTargetStatus, updateWorktreeMeta, worktree.id]
+    [completionTargetStatus, showDeleteQuickAction, updateWorktreeMeta, worktree.id]
   )
 
   const unreadTooltip = worktree.isUnread ? 'Mark read' : 'Mark unread'
@@ -561,10 +583,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
   const showTitleRowDetails = compactCards && (hasDetails || hasPorts)
   const showMetaRowDetails = !compactCards && (hasDetails || hasPorts)
   const showHeaderActions =
-    showTitleRowUnread ||
-    showTitleRowPrimary ||
-    showTitleRowDetails ||
-    (completionAction != null && !isDeleting)
+    showTitleRowUnread || showTitleRowPrimary || showTitleRowDetails || showWorkspaceQuickAction
 
   const unreadQuickAction = showUnreadQuickAction ? (
     <Tooltip>
@@ -769,7 +788,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
 
               {showTitleRowDetails && detailsAndPorts}
 
-              {completionAction != null && !isDeleting && (
+              {showWorkspaceQuickAction && (
                 <Tooltip>
                   <TooltipTrigger asChild>
                     <button
@@ -780,11 +799,19 @@ const WorktreeCard = React.memo(function WorktreeCard({
                       className={cn(
                         'inline-flex size-4 items-center justify-center rounded bg-transparent opacity-0 transition-colors transition-opacity',
                         'group-hover:opacity-100 group-focus-within:opacity-100 focus-visible:opacity-100',
-                        'text-muted-foreground hover:bg-transparent hover:text-foreground focus-visible:bg-transparent focus-visible:text-foreground'
+                        showDeleteQuickAction
+                          ? 'text-muted-foreground hover:bg-destructive/10 hover:text-destructive focus-visible:bg-destructive/10 focus-visible:text-destructive'
+                          : 'text-muted-foreground hover:bg-transparent hover:text-foreground focus-visible:bg-transparent focus-visible:text-foreground'
                       )}
-                      aria-label={completionAction.ariaLabel}
+                      aria-label={
+                        showDeleteQuickAction
+                          ? 'Delete workspace'
+                          : (completionAction?.ariaLabel ?? '')
+                      }
                     >
-                      {completionAction.kind === 'mark-done' ? (
+                      {showDeleteQuickAction ? (
+                        <Trash2 className="size-3.5" />
+                      ) : completionAction?.kind === 'mark-done' ? (
                         <CircleCheck className="size-3.5" />
                       ) : (
                         <CircleDot className="size-3.5" />
@@ -792,7 +819,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
                     </button>
                   </TooltipTrigger>
                   <TooltipContent side="right" sideOffset={8}>
-                    {completionAction.tooltip}
+                    {showDeleteQuickAction ? 'Delete workspace' : completionAction?.tooltip}
                   </TooltipContent>
                 </Tooltip>
               )}
