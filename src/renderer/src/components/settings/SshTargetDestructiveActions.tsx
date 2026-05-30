@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import type { SshConnectionState } from '../../../../shared/ssh-types'
 import { SshDestructiveActionDialog } from './SshDestructiveActionDialog'
@@ -94,11 +94,12 @@ export function SshTargetDestructiveActions({
   const pendingTerminateIsBusy =
     pendingTerminate !== null && targetActionsInFlight.get(pendingTerminate.id) === 'terminate'
 
-  useEffect(() => {
-    if (pendingResetBlockedByConnection && !pendingResetIsBusy) {
-      setPendingReset(null)
-    }
-  }, [pendingResetBlockedByConnection, pendingResetIsBusy])
+  if (pendingResetBlockedByConnection && !pendingResetIsBusy) {
+    // Why: this is component-local state reconciliation from current SSH
+    // connection props; doing it during render avoids a hidden dialog commit
+    // followed by a cleanup Effect pass.
+    setPendingReset(null)
+  }
 
   const confirmResetRelay = async (): Promise<void> => {
     if (!pendingReset) {
