@@ -188,7 +188,10 @@ import {
 export type SourceControlScope = 'all' | 'uncommitted'
 type AbortConflictOperation = Extract<GitConflictOperation, 'merge' | 'rebase'>
 type AbortActionErrorKind = 'abort_merge' | 'abort_rebase'
-type SourceControlActionError = { kind: RemoteOpKind | AbortActionErrorKind; message: string }
+export type SourceControlActionError = {
+  kind: RemoteOpKind | AbortActionErrorKind
+  message: string
+}
 type SourceControlAiInstructionGuidance = {
   operation: SourceControlAiOperation
   repoBacked: boolean
@@ -942,6 +945,51 @@ export function refreshSourceControlAfterRemoteAction({
   void Promise.all([refreshGitStatus(), refreshBranchCompare(), refreshGitHistory()]).catch(onError)
 }
 
+function remoteActionErrorMatchesSettledConflictOperation(
+  kind: SourceControlActionError['kind'],
+  operation: GitConflictOperation
+): boolean {
+  if (kind === 'rebase' || kind === 'abort_rebase') {
+    return operation === 'rebase'
+  }
+  if (kind === 'abort_merge') {
+    return operation === 'merge'
+  }
+  if (kind === 'pull' || kind === 'sync') {
+    return operation === 'merge' || operation === 'rebase'
+  }
+  return false
+}
+
+export function clearRemoteActionErrorsForCompletedConflictOperations({
+  remoteActionErrors,
+  previousConflictOperations,
+  currentConflictOperations
+}: {
+  remoteActionErrors: Record<string, SourceControlActionError | null>
+  previousConflictOperations: Record<string, GitConflictOperation>
+  currentConflictOperations: Record<string, GitConflictOperation>
+}): Record<string, SourceControlActionError | null> {
+  let next: Record<string, SourceControlActionError | null> | null = null
+  for (const [worktreeId, error] of Object.entries(remoteActionErrors)) {
+    if (!error) {
+      continue
+    }
+    const previousOperation = previousConflictOperations[worktreeId] ?? 'unknown'
+    const currentOperation = currentConflictOperations[worktreeId] ?? 'unknown'
+    if (
+      previousOperation === 'unknown' ||
+      currentOperation !== 'unknown' ||
+      !remoteActionErrorMatchesSettledConflictOperation(error.kind, previousOperation)
+    ) {
+      continue
+    }
+    next ??= { ...remoteActionErrors }
+    next[worktreeId] = null
+  }
+  return next ?? remoteActionErrors
+}
+
 function HostedReviewIcon({
   review,
   className
@@ -1030,6 +1078,7 @@ function SourceControlInner(): React.JSX.Element {
   const conflictOperation = useAppStore((s) =>
     activeWorktreeId ? (s.gitConflictOperationByWorktree[activeWorktreeId] ?? 'unknown') : 'unknown'
   )
+  const conflictOperationsByWorktree = useAppStore((s) => s.gitConflictOperationByWorktree)
   // Why: leave undefined until fetchUpstreamStatus resolves for this worktree.
   // A synthetic "no upstream" flashes "Publish Branch" during worktree switches.
   const remoteStatus = useAppStore((s) =>
@@ -1235,6 +1284,7 @@ function SourceControlInner(): React.JSX.Element {
   const [remoteActionErrors, setRemoteActionErrors] = useState<
     Record<string, SourceControlActionError | null>
   >({})
+  const previousConflictOperationsRef = useRef<Record<string, GitConflictOperation>>({})
   // Why: keep commit-in-flight state per-worktree. A single boolean would be
   // cleared when the user switched worktrees, letting them double-click Commit
   // on worktree A after briefly navigating to B and back while A's original
@@ -1894,6 +1944,21 @@ function SourceControlInner(): React.JSX.Element {
       }
     }
   }, [worktreeMap])
+
+  useEffect(() => {
+    // Why: users often finish merge/rebase conflicts in a terminal. Once git
+    // status observes that operation end, the old Source Control failure banner
+    // is stale and should not survive the successful external continue/abort.
+    const previousConflictOperations = previousConflictOperationsRef.current
+    setRemoteActionErrors((prev) =>
+      clearRemoteActionErrorsForCompletedConflictOperations({
+        remoteActionErrors: prev,
+        previousConflictOperations,
+        currentConflictOperations: conflictOperationsByWorktree
+      })
+    )
+    previousConflictOperationsRef.current = conflictOperationsByWorktree
+  }, [conflictOperationsByWorktree])
 
   // Why: the sidebar no longer uses key={activeWorktreeId} to force a full
   // remount on worktree switch (that caused an IPC storm on Windows).
