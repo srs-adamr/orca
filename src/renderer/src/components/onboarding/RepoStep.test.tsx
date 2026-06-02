@@ -51,7 +51,7 @@ describe('RepoStep', () => {
 
     expect(html).toContain('border-border bg-muted/30')
     expect(html).toContain('focus:border-foreground')
-    expect(html).toContain('focus:ring-[3px] focus:ring-foreground/15')
+    expect(html).toContain('focus:ring-2 focus:ring-inset focus:ring-foreground/50')
     expect(html).toContain('autofocus=""')
     expect(html).toContain('Browse for a folder')
     expect(html).toContain('group-hover:translate-x-0.5')
