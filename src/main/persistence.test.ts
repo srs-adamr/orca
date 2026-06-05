@@ -273,7 +273,9 @@ describe('Store', () => {
     expect(settings.showTasksButton).toBe(true)
     expect(settings.showAutomationsButton).toBe(true)
     expect(settings.visibleTaskProviders).toEqual(['github', 'gitlab', 'linear', 'jira'])
-    expect(settings.openInApplications).toEqual([])
+    expect(settings.openInApplications).toEqual([
+      { id: 'vscode', label: 'VS Code', command: 'code' }
+    ])
     expect(settings.experimentalActivity).toBe(false)
     expect(settings.experimentalActivityDefaultedOffForAllUsers).toBe(true)
     expect(settings.experimentalTerminalAttention).toBe(false)

@@ -1901,7 +1901,9 @@ export class Store {
               parsed.settings?.terminalShortcutPolicy
             ),
             disabledTuiAgents: normalizeDisabledTuiAgents(parsed.settings?.disabledTuiAgents),
-            openInApplications: normalizeOpenInApplications(parsed.settings?.openInApplications),
+            openInApplications: normalizeOpenInApplications(parsed.settings?.openInApplications, {
+              seedDefaults: true
+            }),
             notifications: normalizeNotificationSettings(parsed.settings?.notifications),
             sourceControlAi: migratedSourceControlAi,
             // Why: new builds read sourceControlAi, but rollback builds still
