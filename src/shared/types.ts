@@ -2611,6 +2611,9 @@ export type PersistedUIState = {
   /** User-hidden sidebar entry for the setup guide. The Help menu remains
    *  available so this is a reversible declutter preference, not completion. */
   setupGuideSidebarDismissed?: boolean
+  /** User-dismissed browser import hint in the browser toolbar. Import remains
+   *  available from Settings > Browser and the toolbar overflow menu. */
+  browserImportHintHidden?: boolean
   /** URL to navigate to when a new browser tab is opened. Null means blank tab.
    *  Phase 3 will expand this to a full BrowserSessionProfile per workspace. */
   browserDefaultUrl?: string | null
