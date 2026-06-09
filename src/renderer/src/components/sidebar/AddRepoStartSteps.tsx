@@ -99,9 +99,13 @@ export function AddRepoLocalStartStep({
   // The white fill + ⏎ chip is a roving selection indicator, not a fixed "primary" badge:
   // it follows keyboard focus so Enter always activates the highlighted action. Browse is
   // autofocused on open, so it starts selected; Tab and ↑/↓ move the highlight.
-  const [selectedKind, setSelectedKind] = useState<string>(primaryAction.kind)
+  const [selectedKind, setSelectedKind] = useState<string | null>(primaryAction.kind)
 
   useEffect(() => {
+    if (isAdding) {
+      setSelectedKind(null)
+      return
+    }
     if (!isAdding) {
       browseActionRef.current?.focus()
     }
@@ -125,6 +129,16 @@ export function AddRepoLocalStartStep({
     buttons[nextIndex]?.focus()
   }
 
+  const handleActionsBlur = (event: React.FocusEvent<HTMLDivElement>): void => {
+    if (!(event.relatedTarget instanceof HTMLButtonElement)) {
+      setSelectedKind(null)
+      return
+    }
+    if (!event.relatedTarget.matches('button[data-add-repo-action]')) {
+      setSelectedKind(null)
+    }
+  }
+
   return (
     <>
       <DialogHeader>
@@ -141,7 +155,12 @@ export function AddRepoLocalStartStep({
         ) : null}
       </DialogHeader>
 
-      <div className="space-y-3 pt-2" ref={actionsRef} onKeyDown={handleArrowNavigation}>
+      <div
+        className="space-y-3 pt-2"
+        ref={actionsRef}
+        onBlur={handleActionsBlur}
+        onKeyDown={handleArrowNavigation}
+      >
         <AddRepoPrimaryStartAction
           icon={primaryAction.icon}
           title={primaryAction.title}
@@ -204,11 +223,12 @@ type AddRepoStartActionProps = {
 
 // Shared trailing chip so the ⏎ glyph travels with the selected action across primary and secondary rows.
 const AddRepoEnterChip = (): React.JSX.Element => (
-  <ShortcutKeyCombo
-    keys={['⏎']}
-    keyCapClassName="border-primary-foreground/20 bg-primary-foreground/10 text-primary-foreground/80"
-    className="shrink-0"
-  />
+  <span aria-hidden="true" className="shrink-0">
+    <ShortcutKeyCombo
+      keys={['⏎']}
+      keyCapClassName="border-primary-foreground/20 bg-primary-foreground/10 text-primary-foreground/80"
+    />
+  </span>
 )
 
 const AddRepoPrimaryStartAction = ({
