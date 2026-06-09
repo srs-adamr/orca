@@ -36,11 +36,52 @@ function findTitleOscEnd(data: string, startIndex: number): number | null {
   return null
 }
 
+function findSafeCsiEnd(data: string, startIndex: number): number | null {
+  if (data.charCodeAt(startIndex) !== 0x1b || data.charCodeAt(startIndex + 1) !== 0x5b) {
+    return null
+  }
+
+  for (let index = startIndex + 2; index < data.length; index++) {
+    const code = data.charCodeAt(index)
+    if (code < 0x40 || code > 0x7e) {
+      continue
+    }
+    const body = data.slice(startIndex + 2, index)
+    const final = data[index]
+    if (isSafeHiddenRedrawCsi(body, final)) {
+      return index + 1
+    }
+    return null
+  }
+  return null
+}
+
+function isSafeHiddenRedrawCsi(body: string, final: string): boolean {
+  if (/[^0-9;?]/.test(body)) {
+    return false
+  }
+  if (final === 'h' || final === 'l') {
+    return body === '?2026' || body === '?25'
+  }
+  return (
+    final === 'm' ||
+    final === 'H' ||
+    final === 'f' ||
+    final === 'A' ||
+    final === 'B' ||
+    final === 'C' ||
+    final === 'D' ||
+    final === 'G' ||
+    final === 'J' ||
+    final === 'K'
+  )
+}
+
 function containsOnlyRestorableHiddenOutput(data: string): boolean {
   for (let index = 0; index < data.length; ) {
     const code = data.charCodeAt(index)
     if (code === 0x1b) {
-      const nextIndex = findTitleOscEnd(data, index)
+      const nextIndex = findTitleOscEnd(data, index) ?? findSafeCsiEnd(data, index)
       if (nextIndex === null) {
         return false
       }
@@ -66,14 +107,12 @@ export function shouldSkipHiddenRendererOutput({
   foreground,
   canRestoreHiddenOutput,
   startupRendererQueryWindowActive,
-  synchronizedOutputActive,
   data
 }: HiddenRendererSkipEligibility): boolean {
   if (
     foreground ||
     !canRestoreHiddenOutput ||
     startupRendererQueryWindowActive ||
-    synchronizedOutputActive ||
     data.length === 0
   ) {
     return false

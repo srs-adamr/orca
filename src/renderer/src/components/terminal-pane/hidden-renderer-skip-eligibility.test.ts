@@ -61,7 +61,19 @@ describe('shouldSkipHiddenRendererOutput', () => {
     ).toBe(true)
   })
 
-  it('keeps startup query windows and terminal-control chunks live', () => {
+  it('skips safe hidden synchronized redraw chunks when a snapshot restore is available', () => {
+    expect(
+      shouldSkipHiddenRendererOutput({
+        foreground: false,
+        canRestoreHiddenOutput: true,
+        startupRendererQueryWindowActive: false,
+        synchronizedOutputActive: true,
+        data: '\x1b[?2026h\x1b[1;1H\x1b[2J\x1b[32mready\x1b[0m\x1b[?25l\x1b[?2026l\n'
+      })
+    ).toBe(true)
+  })
+
+  it('keeps startup query windows live', () => {
     expect(
       shouldSkipHiddenRendererOutput({
         foreground: false,
@@ -69,15 +81,6 @@ describe('shouldSkipHiddenRendererOutput', () => {
         startupRendererQueryWindowActive: true,
         synchronizedOutputActive: false,
         data: 'plain\r\n'
-      })
-    ).toBe(false)
-    expect(
-      shouldSkipHiddenRendererOutput({
-        foreground: false,
-        canRestoreHiddenOutput: true,
-        startupRendererQueryWindowActive: false,
-        synchronizedOutputActive: true,
-        data: 'plain row inside synchronized frame\r\n'
       })
     ).toBe(false)
     expect(
@@ -95,9 +98,23 @@ describe('shouldSkipHiddenRendererOutput', () => {
         canRestoreHiddenOutput: true,
         startupRendererQueryWindowActive: false,
         synchronizedOutputActive: false,
-        data: '\x1b[?2026hredraw\x1b[?2026l'
+        data: '\x1b[?1;2c'
       })
     ).toBe(false)
+  })
+
+  it('keeps query and incomplete control chunks live', () => {
+    for (const data of ['\x1b[6n', '\x1b[c', '\x1b[?25', '\x1b[?1049h']) {
+      expect(
+        shouldSkipHiddenRendererOutput({
+          foreground: false,
+          canRestoreHiddenOutput: true,
+          startupRendererQueryWindowActive: false,
+          synchronizedOutputActive: false,
+          data
+        })
+      ).toBe(false)
+    }
   })
 
   it('keeps non-title OSC and incomplete title OSC chunks live', () => {

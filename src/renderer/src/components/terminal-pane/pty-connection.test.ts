@@ -2945,48 +2945,56 @@ describe('connectPanePty', () => {
     expect(transport.sendInput).not.toHaveBeenCalled()
   })
 
-  it('keeps hidden terminal-control bytes on the live xterm path', async () => {
-    const pendingTimeouts: (() => void)[] = []
-    const originalSetTimeout = globalThis.setTimeout
-    globalThis.setTimeout = vi.fn((fn: () => void) => {
-      pendingTimeouts.push(fn)
-      return 999 as unknown as ReturnType<typeof setTimeout>
-    }) as unknown as typeof setTimeout
+  it('restores safe hidden terminal-control bytes from the main snapshot', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const transport = createMockTransport('pty-id')
+    const capturedDataCallback: {
+      current: ((data: string, meta?: { seq?: number; rawLength?: number }) => void) | null
+    } = { current: null }
+    transport.connect.mockImplementation(async ({ callbacks }: { callbacks: ConnectCallbacks }) => {
+      capturedDataCallback.current = callbacks.onData ?? null
+      return 'pty-id'
+    })
+    transportFactoryQueue.push(transport)
+    const getMainBufferSnapshot = window.api.pty.getMainBufferSnapshot as unknown as ReturnType<
+      typeof vi.fn
+    >
+    getMainBufferSnapshot.mockResolvedValue({
+      data: 'control snapshot\r\n',
+      cols: 100,
+      rows: 30,
+      seq: 64
+    })
 
-    try {
-      const { connectPanePty } = await import('./pty-connection')
-      const transport = createMockTransport('pty-id')
-      const capturedDataCallback: { current: ((data: string) => void) | null } = { current: null }
-      transport.connect.mockImplementation(
-        async ({ callbacks }: { callbacks: ConnectCallbacks }) => {
-          capturedDataCallback.current = callbacks.onData ?? null
-          return 'pty-id'
-        }
-      )
-      transportFactoryQueue.push(transport)
+    const pane = createPane(1)
+    const manager = createManager(1)
+    const deps = createDeps({
+      isVisibleRef: { current: false }
+    })
 
-      const pane = createPane(1)
-      const manager = createManager(1)
-      const deps = createDeps({
-        isVisibleRef: { current: false }
-      })
+    connectPanePty(pane as never, manager as never, deps as never)
+    await flushAsyncTicks(6)
 
-      connectPanePty(pane as never, manager as never, deps as never)
-      await flushAsyncTicks(6)
+    expect(capturedDataCallback.current).not.toBeNull()
+    const controlOutput = '\x1b[2J\x1b[Hhello\r\n'
+    capturedDataCallback.current?.(controlOutput, {
+      seq: controlOutput.length,
+      rawLength: controlOutput.length
+    })
+    expect(pane.terminal.write).not.toHaveBeenCalledWith(controlOutput, expect.any(Function))
 
-      expect(capturedDataCallback.current).not.toBeNull()
-      const controlOutput = '\x1b[2J\x1b[Hhello\r\n'
-      capturedDataCallback.current?.(controlOutput)
-      expect(pane.terminal.write).not.toHaveBeenCalledWith(controlOutput)
+    ;(deps.isVisibleRef as { current: boolean }).current = true
+    capturedDataCallback.current?.('visible\r\n', {
+      seq: controlOutput.length + 'visible\r\n'.length,
+      rawLength: 'visible\r\n'.length
+    })
+    await flushAsyncTicks(20)
 
-      for (const fn of pendingTimeouts) {
-        fn()
-      }
-
-      expect(pane.terminal.write).toHaveBeenCalledWith(controlOutput)
-    } finally {
-      globalThis.setTimeout = originalSetTimeout
-    }
+    expect(getMainBufferSnapshot).toHaveBeenCalledWith('pty-id', { scrollbackRows: 5000 })
+    expect(pane.terminal.write).toHaveBeenCalledWith(
+      expect.stringContaining('control snapshot'),
+      expect.any(Function)
+    )
   })
 
   it('keeps visually rich hidden PTY bytes on the live xterm path', async () => {
@@ -3023,15 +3031,26 @@ describe('connectPanePty', () => {
     }
   })
 
-  it('keeps split hidden synchronized output frames on the live xterm path', async () => {
+  it('restores safe split hidden synchronized output frames from the main snapshot', async () => {
     const { connectPanePty } = await import('./pty-connection')
     const transport = createMockTransport('pty-id')
-    const capturedDataCallback: { current: ((data: string) => void) | null } = { current: null }
+    const capturedDataCallback: {
+      current: ((data: string, meta?: { seq?: number; rawLength?: number }) => void) | null
+    } = { current: null }
     transport.connect.mockImplementation(async ({ callbacks }: { callbacks: ConnectCallbacks }) => {
       capturedDataCallback.current = callbacks.onData ?? null
       return 'pty-id'
     })
     transportFactoryQueue.push(transport)
+    const getMainBufferSnapshot = window.api.pty.getMainBufferSnapshot as unknown as ReturnType<
+      typeof vi.fn
+    >
+    getMainBufferSnapshot.mockResolvedValue({
+      data: 'snapshot table\r\nLONG_TABLE_SCROLL_RESTORE_marker\r\n',
+      cols: 100,
+      rows: 30,
+      seq: 80
+    })
 
     const pane = createPane(1)
     const manager = createManager(1)
@@ -3043,23 +3062,40 @@ describe('connectPanePty', () => {
     await flushAsyncTicks(6)
 
     expect(capturedDataCallback.current).not.toBeNull()
-    vi.useFakeTimers()
-    try {
-      const startChunk = '\x1b[?2026h'
-      const plainRowChunk = '| Sam Syntax | Compiler | Online |\r\n'
-      const endChunk = 'LONG_TABLE_SCROLL_RESTORE_marker\r\n\x1b[?2026l'
+    const startChunk = '\x1b[?2026h'
+    const plainRowChunk = '| Sam Syntax | Compiler | Online |\r\n'
+    const endChunk = 'LONG_TABLE_SCROLL_RESTORE_marker\r\n\x1b[?2026l'
+    const visibleChunk = 'visible-after-hidden\r\n'
 
-      capturedDataCallback.current?.(startChunk)
-      capturedDataCallback.current?.(plainRowChunk)
-      capturedDataCallback.current?.(endChunk)
+    capturedDataCallback.current?.(startChunk, {
+      seq: startChunk.length,
+      rawLength: startChunk.length
+    })
+    capturedDataCallback.current?.(plainRowChunk, {
+      seq: startChunk.length + plainRowChunk.length,
+      rawLength: plainRowChunk.length
+    })
+    capturedDataCallback.current?.(endChunk, {
+      seq: startChunk.length + plainRowChunk.length + endChunk.length,
+      rawLength: endChunk.length
+    })
 
-      expect(pane.terminal.write).not.toHaveBeenCalledWith(plainRowChunk)
-      vi.advanceTimersByTime(50)
-      expect(pane.terminal.write).toHaveBeenCalledWith(`${startChunk}${plainRowChunk}${endChunk}`)
-      expect(window.api.pty.getMainBufferSnapshot).not.toHaveBeenCalled()
-    } finally {
-      vi.useRealTimers()
-    }
+    expect(pane.terminal.write).not.toHaveBeenCalledWith(startChunk, expect.any(Function))
+    expect(pane.terminal.write).not.toHaveBeenCalledWith(plainRowChunk, expect.any(Function))
+    expect(pane.terminal.write).not.toHaveBeenCalledWith(endChunk, expect.any(Function))
+
+    ;(deps.isVisibleRef as { current: boolean }).current = true
+    capturedDataCallback.current?.(visibleChunk, {
+      seq: startChunk.length + plainRowChunk.length + endChunk.length + visibleChunk.length,
+      rawLength: visibleChunk.length
+    })
+    await flushAsyncTicks(20)
+
+    expect(getMainBufferSnapshot).toHaveBeenCalledWith('pty-id', { scrollbackRows: 5000 })
+    expect(pane.terminal.write).toHaveBeenCalledWith(
+      expect.stringContaining('snapshot table'),
+      expect.any(Function)
+    )
   })
 
   it('queues visible split-pane PTY bytes when the pane is not active', async () => {
