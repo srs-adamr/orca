@@ -32,6 +32,34 @@ Project A
 In this model, machines are not separate isolated workspaces. They are places
 where a project can be available and where a workspace can run.
 
+## Decision Summary
+
+Move Orca toward a project-first durable model:
+
+```text
+Project -> ProjectHostSetup -> Workspace
+```
+
+The host-first sidebar work is still valuable as an operational view because it
+makes remote status, filtering, and troubleshooting visible. It should not be
+the only long-term mental model. A host is where a project can run; the project
+is still the user's primary organizing concept.
+
+This means:
+
+- a local-only project remains simple: one project with one local setup
+- an SSH target, VM, remote server, or future Orca cloud VM is a host
+- a project can exist on one host, several hosts, or only a remote host
+- same-name folders should not merge unless Orca has reliable provider/setup
+  identity
+- workspace creation eventually chooses both project and run-on host
+- settings need clear client, host, project, and project-host ownership
+
+The short implementation count is 12 meaningful change surfaces: data model,
+persistence, runtime ownership, workspace creation, project setup, sidebar row
+model, project settings, host settings, version compatibility, caches, CLI/API,
+and validation.
+
 ## Reference Findings
 
 ### Superset
@@ -694,6 +722,22 @@ Important limitation:
 - This is not the full migration yet. `Repo` remains the source of truth for the
   compatibility records, and create-workspace/settings/sidebar flows still use
   the current repo-centric APIs until the later steps above are implemented.
+
+Remaining end-to-end work:
+
+- teach workspace creation to resolve `{ projectId, hostId }` through a ready
+  project-host setup
+- add setup-on-host flows for local paths and SSH paths
+- split settings into explicit client, host, project, and project-host setup
+  scopes
+- persist explicit workspace project/setup/host ownership instead of relying on
+  the repo compatibility record
+- audit runtime routing, cache keys, request cancellation, and stale-response
+  handling for host/setup-local ownership
+- add project-first CLI/API commands with compatibility aliases for existing
+  repo/worktree commands
+- validate migration, creation, settings, sidebar, SSH, and version-skew flows
+  end to end
 
 ## Recommendation
 
