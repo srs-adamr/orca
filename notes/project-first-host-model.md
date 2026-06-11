@@ -743,6 +743,10 @@ Landed so far:
   panes, and imports an existing folder on another known local, SSH, or active
   runtime host. Setup routing now follows the selected setup host instead of the
   currently focused runtime.
+- Updated the new workspace composer `Run on` menu so known hosts can appear as
+  disabled "project not set up on this host" rows, not only as invisible missing
+  options. Ready setups remain selectable and still resolve through the
+  compatibility repo path.
 - Added tests for local repos, SSH repos, same-provider multi-host grouping,
   no-identity same-name non-grouping, selector cache behavior, persistence
   backfill, repo mutation synchronization, renderer hydration, and runtime RPC
@@ -764,8 +768,8 @@ Important limitation:
 
 Remaining end-to-end work:
 
-- teach workspace creation to resolve `{ projectId, hostId }` through a ready
-  project-host setup
+- add inline clone/import actions for `Run on` hosts where the project is not
+  set up yet
 - broaden setup-on-host flows beyond known local, SSH, and active runtime hosts
 - add clone/provision setup-on-host flows
 - split settings into explicit client, host, project, and project-host setup

@@ -19,14 +19,18 @@ export default function ProjectHostSetupCombobox({
   onValueChange
 }: ProjectHostSetupComboboxProps): React.JSX.Element {
   const [open, setOpen] = React.useState(false)
-  const selected = options.find((option) => option.id === value) ?? options[0] ?? null
+  const readyOptions = options.filter((option) => option.kind === 'ready')
+  const selected = readyOptions.find((option) => option.id === value) ?? readyOptions[0] ?? null
 
   const handleSelect = React.useCallback(
     (setupId: string): void => {
+      if (!readyOptions.some((option) => option.id === setupId)) {
+        return
+      }
       onValueChange(setupId)
       setOpen(false)
     },
-    [onValueChange]
+    [onValueChange, readyOptions]
   )
 
   return (
@@ -72,6 +76,7 @@ export default function ProjectHostSetupCombobox({
                 key={option.id}
                 value={option.id}
                 onSelect={() => handleSelect(option.id)}
+                disabled={option.kind !== 'ready'}
                 className="items-center gap-2 px-3 py-2"
               >
                 <Check
@@ -84,7 +89,7 @@ export default function ProjectHostSetupCombobox({
                 <div className="min-w-0 flex-1">
                   <div className="truncate text-sm">{option.label}</div>
                   <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                    {option.path}
+                    {option.kind === 'ready' ? option.path : option.detail}
                   </div>
                 </div>
               </CommandItem>

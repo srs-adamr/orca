@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ExecutionHostId } from '../../../shared/execution-host'
+import type { ExecutionHostRegistryEntry } from '../../../shared/execution-host-registry'
 import type { ProjectHostSetup, Repo } from '../../../shared/types'
 import { buildProjectHostSetupOptions } from './project-host-setup-options'
 
@@ -35,6 +36,20 @@ function setup(
   }
 }
 
+function host(
+  id: ExecutionHostId,
+  overrides: Partial<ExecutionHostRegistryEntry> = {}
+): ExecutionHostRegistryEntry {
+  return {
+    id,
+    kind: id === 'local' ? 'local' : id.startsWith('ssh:') ? 'ssh' : 'runtime',
+    label: id === 'local' ? 'Local Mac' : id.replace(/^ssh:|^runtime:/, ''),
+    detail: id === 'local' ? 'This computer' : 'Host',
+    health: id === 'local' ? 'local' : 'available',
+    ...overrides
+  }
+}
+
 describe('buildProjectHostSetupOptions', () => {
   it('returns ready setup choices for one project sorted with local first', () => {
     const options = buildProjectHostSetupOptions({
@@ -65,5 +80,24 @@ describe('buildProjectHostSetupOptions', () => {
     })
 
     expect(options.map((option) => option.id)).toEqual(['ready'])
+  })
+
+  it('includes known hosts that still need project setup', () => {
+    const options = buildProjectHostSetupOptions({
+      projectId: 'project-1',
+      eligibleRepos: [repo('local-repo')],
+      hosts: [host('local'), host('ssh:builder', { label: 'Builder' })],
+      projectHostSetups: [setup('local', 'project-1', 'local', 'local-repo')]
+    })
+
+    expect(options).toEqual([
+      expect.objectContaining({ id: 'local', kind: 'ready', label: 'Local Mac' }),
+      expect.objectContaining({
+        id: 'needs-setup:ssh:builder',
+        kind: 'needs-setup',
+        label: 'Builder',
+        detail: 'Project not set up on this host'
+      })
+    ])
   })
 })

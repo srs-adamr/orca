@@ -88,6 +88,8 @@ import {
   buildProjectHostSetupOptions,
   type ProjectHostSetupOption
 } from '@/lib/project-host-setup-options'
+import { buildExecutionHostRegistry } from '../../../shared/execution-host-registry'
+import { getHostDisplayLabelOverrides } from '../../../shared/host-setting-overrides'
 import { queueNewWorkspaceTerminalFocus } from '@/lib/new-workspace-terminal-focus'
 import { getSettingsForRepoRuntimeOwner } from '@/lib/repo-runtime-owner'
 import { getSuggestedCreatureName } from '@/components/sidebar/worktree-name-suggestions'
@@ -331,7 +333,9 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
   const sparsePresetsByRepo = useAppStore((s) => s.sparsePresetsByRepo)
   const workspaceStatuses = useAppStore((s) => s.workspaceStatuses)
   const sshConnectionStates = useAppStore((s) => s.sshConnectionStates)
+  const sshTargetLabels = useAppStore((s) => s.sshTargetLabels)
   const sshConnectedGeneration = useAppStore((s) => s.sshConnectedGeneration)
+  const runtimeStatusByEnvironmentId = useAppStore((s) => s.runtimeStatusByEnvironmentId)
   const workspaceHostScope = useAppStore((s) => s.workspaceHostScope)
   const eligibleRepos = useMemo(() => getComposerEligibleRepos(repos), [repos])
   const draftRepoId = persistDraft ? (newWorkspaceDraft?.repoId ?? null) : null
@@ -382,14 +386,27 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
     selectedWorkspaceTarget.status === 'ready'
       ? selectedWorkspaceTarget.target.projectHostSetupId
       : null
+  const hostOptions = useMemo(
+    () =>
+      buildExecutionHostRegistry({
+        repos,
+        settings,
+        sshTargetLabels,
+        sshConnectionStates,
+        runtimeStatusByEnvironmentId,
+        hostLabelOverrides: getHostDisplayLabelOverrides(settings)
+      }),
+    [repos, settings, sshConnectionStates, sshTargetLabels, runtimeStatusByEnvironmentId]
+  )
   const projectHostSetupOptions = useMemo(
     () =>
       buildProjectHostSetupOptions({
         projectId: selectedProjectId,
         projectHostSetups,
-        eligibleRepos
+        eligibleRepos,
+        hosts: hostOptions
       }),
-    [eligibleRepos, projectHostSetups, selectedProjectId]
+    [eligibleRepos, hostOptions, projectHostSetups, selectedProjectId]
   )
   const selectedRepoSettings = useMemo(() => {
     if (!settings) {
@@ -1679,7 +1696,7 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
   const handleProjectHostSetupChange = useCallback(
     (setupId: string): void => {
       const option = projectHostSetupOptions.find((candidate) => candidate.id === setupId)
-      if (!option) {
+      if (!option || option.kind !== 'ready') {
         return
       }
       handleRepoChange(option.repoId)
