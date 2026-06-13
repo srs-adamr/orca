@@ -44,6 +44,7 @@ import {
   getLinearAgentSkillSetupToastTitle,
   getLinearAgentSkillSetupToastDescription
 } from './linear-agent-skill-setup-copy'
+import { LinearAgentSkillSetupReminderToastBody } from './linear-agent-skill-setup-reminder-toast-body'
 import {
   getCurrentPlatform,
   getLinearPromptAgentRuntime,
@@ -206,16 +207,20 @@ export function LinearAgentSkillSetupPrompt({
     }
     state.toastCount += 1
     state.lastToastActivationId = activationId
+    const toastId = `linear-agent-skill-setup-${localDismissStorageKey}`
+    const openSetupFromToast = (): void => {
+      toast.dismiss(toastId)
+      state.activeToastId = undefined
+      setSetupDialogOpen(true)
+    }
     state.activeToastId = toast.warning(toastTitle, {
-      id: `linear-agent-skill-setup-${localDismissStorageKey}`,
-      description: toastDescription,
-      action: {
-        label: translate(
-          'auto.components.sidebar.LinearAgentSkillSetupPrompt.openSetup',
-          'Set up Linear access'
-        ),
-        onClick: () => setSetupDialogOpen(true)
-      }
+      id: toastId,
+      description: (
+        <LinearAgentSkillSetupReminderToastBody
+          description={toastDescription}
+          onOpen={openSetupFromToast}
+        />
+      )
     })
   }, [localDismissStorageKey, missingSetup, setupDialogOpen, surface, toastDescription, toastTitle])
 
