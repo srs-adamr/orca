@@ -1,9 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { CommitArea, ConflictSummaryCard, OperationBanner } from './SourceControl'
-import { resolvePrimaryAction, type PrimaryActionInputs } from './source-control-primary-action'
+import {
+  resolveCommitAreaPrimaryAction,
+  type PrimaryActionInputs
+} from './source-control-primary-action'
 import { resolveDropdownItems, type DropdownActionKind } from './source-control-dropdown-items'
-import { resolveCreatePrIntentPrerequisiteAction } from './source-control-primary-create-pr-intent-action'
 import { TooltipProvider } from '@/components/ui/tooltip'
 
 function buildInputs(overrides: Partial<PrimaryActionInputs> = {}): PrimaryActionInputs {
@@ -40,7 +42,7 @@ function baseProps(overrides: Partial<PrimaryActionInputs> = {}) {
     hasUnresolvedConflicts: inputs.hasUnresolvedConflicts,
     isRemoteOperationActive: inputs.isRemoteOperationActive,
     inFlightRemoteOpKind: inputs.inFlightRemoteOpKind ?? null,
-    primaryAction: resolvePrimaryAction(inputs),
+    primaryAction: resolveCommitAreaPrimaryAction(inputs),
     dropdownItems: resolveDropdownItems(inputs),
     onCommitMessageChange: vi.fn(),
     onGenerate: vi.fn(),
@@ -329,7 +331,7 @@ describe('CommitArea', () => {
     expect(button).not.toContain('lucide-check')
   })
 
-  it('shows Stage All beside Create PR intent when unstaged changes need staging', () => {
+  it('keeps Stage All as the commit-area primary when review prep can stage changes', () => {
     const input = buildInputs({
       stagedCount: 0,
       hasUnstagedChanges: true,
@@ -345,22 +347,15 @@ describe('CommitArea', () => {
         nextAction: 'commit'
       }
     })
-    const markup = renderCommitArea({
-      ...baseProps(input),
-      createPrIntentPrerequisiteAction: resolveCreatePrIntentPrerequisiteAction(input),
-      onCreatePrIntentPrerequisiteAction: vi.fn()
-    })
+    const markup = renderCommitArea(baseProps(input))
 
-    const stageAllButton = buttonContaining(markup, 'Stage All')
+    const stageAllButton = firstButton(markup)
+    expect(stageAllButton).toContain('Stage All')
     expect(stageAllButton).not.toContain('disabled=""')
     expect(stageAllButton).toContain('lucide-plus')
     expect(stageAllButton).toContain('rounded-r-none')
-    const createPrButton = buttonContaining(markup, 'Create PR')
-    expect(createPrButton).not.toContain('disabled=""')
-    expect(createPrButton).not.toContain('rounded-r-none')
     expect(markup).toContain('aria-label="More commit and remote actions"')
     expect(markup).toContain('Stage all changes')
-    expect(markup.indexOf('Stage All')).toBeLessThan(markup.indexOf('Create PR'))
     expect(
       (markup.match(/<button\b[\s\S]*?<\/button>/g) ?? []).some((button) =>
         button.includes('Commit</button>')
@@ -368,7 +363,7 @@ describe('CommitArea', () => {
     ).toBe(false)
   })
 
-  it('shows Push beside Create PR intent when committed changes need pushing', () => {
+  it('keeps Push as the commit-area primary when review prep can create after pushing', () => {
     const input = buildInputs({
       stagedCount: 0,
       hasUnstagedChanges: false,
@@ -384,20 +379,14 @@ describe('CommitArea', () => {
         nextAction: 'push'
       }
     })
-    const markup = renderCommitArea({
-      ...baseProps(input),
-      createPrIntentPrerequisiteAction: resolveCreatePrIntentPrerequisiteAction(input),
-      onCreatePrIntentPrerequisiteAction: vi.fn()
-    })
+    const markup = renderCommitArea(baseProps(input))
 
-    const pushButton = buttonContaining(markup, 'Push')
+    const pushButton = firstButton(markup)
+    expect(pushButton).toContain('Push')
     expect(pushButton).not.toContain('disabled=""')
     expect(pushButton).toContain('lucide-arrow-up')
     expect(pushButton).toContain('rounded-r-none')
-    const createPrButton = buttonContaining(markup, 'Create PR')
-    expect(createPrButton).not.toContain('rounded-r-none')
     expect(markup).toContain('aria-label="More commit and remote actions"')
-    expect(markup.indexOf('Push')).toBeLessThan(markup.indexOf('Create PR'))
   })
 })
 

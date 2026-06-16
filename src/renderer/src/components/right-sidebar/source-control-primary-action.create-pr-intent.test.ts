@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest'
-import { resolvePrimaryAction, type PrimaryActionInputs } from './source-control-primary-action'
-import { resolveCreatePrIntentPrerequisiteAction } from './source-control-primary-create-pr-intent-action'
+import {
+  resolveCommitAreaPrimaryAction,
+  resolvePrimaryAction,
+  type PrimaryActionInputs
+} from './source-control-primary-action'
+import { resolveCreatePrHeaderAction } from './source-control-primary-create-pr-intent-action'
 
 function inputs(overrides: Partial<PrimaryActionInputs> = {}): PrimaryActionInputs {
   return {
@@ -81,7 +85,8 @@ describe('resolvePrimaryAction Create PR intent', () => {
     const result = resolvePrimaryAction(input)
     expect(result.kind).toBe('create_pr_intent')
     expect(result.disabled).toBe(false)
-    expect(resolveCreatePrIntentPrerequisiteAction(input)).toEqual({
+    expect(resolveCreatePrHeaderAction(input)).toEqual(result)
+    expect(resolveCommitAreaPrimaryAction(input)).toEqual({
       kind: 'push',
       label: 'Push',
       title: 'Push 2 commits',
@@ -175,7 +180,7 @@ describe('resolvePrimaryAction Create PR intent', () => {
     }
   )
 
-  it('returns Publish Branch as the Create PR intent prerequisite for unpublished commits', () => {
+  it('separates Publish Branch from the Create PR header action for unpublished commits', () => {
     const input = inputs({
       upstreamStatus: { hasUpstream: false, ahead: 0, behind: 0 },
       branchCommitsAhead: 2,
@@ -188,7 +193,8 @@ describe('resolvePrimaryAction Create PR intent', () => {
       }
     })
 
-    expect(resolveCreatePrIntentPrerequisiteAction(input)).toEqual({
+    expect(resolveCreatePrHeaderAction(input)?.kind).toBe('create_pr_intent')
+    expect(resolveCommitAreaPrimaryAction(input)).toEqual({
       kind: 'publish',
       label: 'Publish Branch',
       title: 'Publish this branch to origin',
@@ -196,7 +202,7 @@ describe('resolvePrimaryAction Create PR intent', () => {
     })
   })
 
-  it('returns Force Push as the Create PR intent prerequisite for patch-equivalent divergence', () => {
+  it('separates Force Push from the Create PR header action for patch-equivalent divergence', () => {
     const input = inputs({
       branchCommitsAhead: 4,
       upstreamStatus: {
@@ -215,11 +221,34 @@ describe('resolvePrimaryAction Create PR intent', () => {
       }
     })
 
-    expect(resolveCreatePrIntentPrerequisiteAction(input)).toEqual({
+    expect(resolveCreatePrHeaderAction(input)?.kind).toBe('create_pr_intent')
+    expect(resolveCommitAreaPrimaryAction(input)).toEqual({
       kind: 'push',
       label: 'Force Push',
       title:
         'Remote only has older copies of local commits. Force push 4 branch commits with lease to update origin/feature.',
+      disabled: false
+    })
+  })
+
+  it('returns direct Create PR as a header action when the branch is ready', () => {
+    expect(
+      resolveCreatePrHeaderAction(
+        inputs({
+          upstreamStatus: upstreamInSync,
+          hostedReviewCreation: {
+            provider: 'github',
+            review: null,
+            canCreate: true,
+            blockedReason: null,
+            nextAction: null
+          }
+        })
+      )
+    ).toEqual({
+      kind: 'create_pr',
+      label: 'Create PR',
+      title: 'Create a pull request for this branch',
       disabled: false
     })
   })

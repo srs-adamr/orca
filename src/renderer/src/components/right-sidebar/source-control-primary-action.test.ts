@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
-import { resolvePrimaryAction, type PrimaryActionInputs } from './source-control-primary-action'
-import { resolveCreatePrIntentPrerequisiteAction } from './source-control-primary-create-pr-intent-action'
+import {
+  resolveCommitAreaPrimaryAction,
+  resolvePrimaryAction,
+  type PrimaryActionInputs
+} from './source-control-primary-action'
 
 // Why: a shared defaults object keeps each case row terse while making the
 // "this is the one knob that differs from the baseline" intent obvious.
@@ -380,7 +383,7 @@ describe('resolvePrimaryAction', () => {
     expect(result.disabled).toBe(false)
   })
 
-  it('keeps a Stage All prerequisite available when Create PR intent owns unstaged changes', () => {
+  it('keeps Stage All available in the commit area when Create PR intent is additive', () => {
     const input = inputs({
       stagedCount: 0,
       hasUnstagedChanges: true,
@@ -398,7 +401,7 @@ describe('resolvePrimaryAction', () => {
     })
 
     expect(resolvePrimaryAction(input).kind).toBe('create_pr_intent')
-    expect(resolveCreatePrIntentPrerequisiteAction(input)).toEqual({
+    expect(resolveCommitAreaPrimaryAction(input)).toEqual({
       kind: 'stage',
       label: 'Stage All',
       title: 'Stage all changes',
@@ -406,7 +409,7 @@ describe('resolvePrimaryAction', () => {
     })
   })
 
-  it('keeps the partial-staging reason on the Create PR intent Stage All prerequisite', () => {
+  it('keeps the partial-staging reason on the additive commit-area Stage All action', () => {
     const input = inputs({
       stagedCount: 1,
       hasUnstagedChanges: true,
@@ -424,7 +427,7 @@ describe('resolvePrimaryAction', () => {
     })
 
     expect(resolvePrimaryAction(input).kind).toBe('create_pr_intent')
-    expect(resolveCreatePrIntentPrerequisiteAction(input)).toEqual({
+    expect(resolveCommitAreaPrimaryAction(input)).toEqual({
       kind: 'stage',
       label: 'Stage All',
       title: 'Stage all changes before committing partially staged files',

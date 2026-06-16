@@ -298,3 +298,13 @@ export function resolvePrimaryAction(inputs: PrimaryActionInputs): PrimaryAction
     disabled: true
   }
 }
+
+export function resolveCommitAreaPrimaryAction(inputs: PrimaryActionInputs): PrimaryAction {
+  // Why: review creation is additive chrome. The commit area should keep the
+  // same local/remote primary action it would have without review eligibility.
+  return resolvePrimaryAction({
+    ...inputs,
+    hostedReviewCreation: null,
+    isPrIntentInFlight: false
+  })
+}
