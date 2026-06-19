@@ -330,7 +330,7 @@ describe('TabBar context menu wiring', () => {
     expect(strip?.props.className).toContain('min-w-0')
     expect(strip?.props.className).toContain('flex-[0_1_auto]')
     expect(strip?.props.className).toContain('overflow-x-auto')
-    expect(strip?.props.className).toContain('scrollbar-sleek')
+    expect(strip?.props.className).not.toContain('scrollbar-sleek')
   })
 
   it('passes the editor unifiedTabId when EditorFileTab triggers onCloseToRight', async () => {

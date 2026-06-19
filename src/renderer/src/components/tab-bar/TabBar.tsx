@@ -1030,7 +1030,7 @@ function TabBarInner({
           // between-tab separator. A strip-level `border-l` would render at
           // a different box than the tab's own `border-t`, producing a
           // heavier-looking L-corner at the leftmost tab when inactive.
-          className="terminal-tab-strip scrollbar-sleek flex min-w-0 max-w-full flex-[0_1_auto] items-stretch overflow-x-auto overflow-y-hidden border-r border-border"
+          className="terminal-tab-strip flex min-w-0 max-w-full flex-[0_1_auto] items-stretch overflow-x-auto overflow-y-hidden border-r border-border"
           style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
         >
           {orderedItems.map((item, index) => {
