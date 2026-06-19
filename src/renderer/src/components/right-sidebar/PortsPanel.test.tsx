@@ -23,6 +23,8 @@ vi.mock('@/lib/worktree-activation', () => ({
 
 import { getLocalWorkspacePortSections } from './PortsPanel'
 import {
+  getPortOpenBrowserTooltipLabel,
+  getPortSystemBrowserHint,
   killWorkspacePortForTarget,
   mergeWorkspacePortScans,
   openWorkspacePortInBrowser,
@@ -108,6 +110,14 @@ beforeEach(() => {
 })
 
 describe('PortsPanel runtime routing', () => {
+  it('formats platform-specific system-browser hints for port open tooltips', () => {
+    expect(getPortSystemBrowserHint(true)).toBe('⇧⌘+click for system browser')
+    expect(getPortSystemBrowserHint(false)).toBe('Shift+Ctrl+click for system browser')
+    expect(getPortOpenBrowserTooltipLabel('Open in Browser', false)).toBe(
+      'Open in Browser. Shift+Ctrl+click for system browser'
+    )
+  })
+
   it('maps macOS Shift+Cmd-click to system-browser port routing', () => {
     expect(
       resolvePortOpenInOrcaBrowser({

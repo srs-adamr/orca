@@ -10,6 +10,7 @@ import { getActiveRuntimeTarget } from '@/runtime/runtime-rpc-client'
 import { getRuntimeEnvironmentIdForWorktree } from '@/lib/worktree-runtime-owner'
 import {
   canStopWorkspacePort,
+  getPortOpenBrowserTooltipLabel,
   goToWorkspacePortOwner,
   killWorkspacePortForTarget,
   openWorkspacePortInBrowser,
@@ -59,11 +60,13 @@ export function WorktreeCardPortsTrigger({
 
 function PortAction({
   label,
+  tooltipLabel = label,
   disabled = false,
   onClick,
   children
 }: {
   label: string
+  tooltipLabel?: string
   disabled?: boolean
   onClick: (event: React.MouseEvent<HTMLButtonElement>) => void
   children: React.ReactNode
@@ -91,7 +94,7 @@ function PortAction({
         </Button>
       </TooltipTrigger>
       <TooltipContent side="top" sideOffset={4}>
-        {label}
+        {tooltipLabel}
       </TooltipContent>
     </Tooltip>
   )
@@ -115,6 +118,10 @@ function WorktreePortRow({ port }: { port: WorkspacePort }): React.JSX.Element {
   const processLabel = port.processName ?? (port.pid ? `PID ${port.pid}` : 'Unknown process')
   const address = addressForPort(port)
   const canStop = canStopWorkspacePort(port)
+  const openBrowserLabel = translate(
+    'auto.components.sidebar.WorktreeCardPorts.33bc7d7495',
+    'Open in Browser'
+  )
 
   const handleOpen = useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -249,10 +256,8 @@ function WorktreePortRow({ port }: { port: WorkspacePort }): React.JSX.Element {
         </Tooltip>
         <div className="absolute inset-y-0 right-0 flex items-center gap-0.5 rounded-md border border-border/40 bg-popover/95 px-0.5 can-hover:opacity-0 shadow-xs transition-opacity group-hover/port:opacity-100 group-focus-within/port:opacity-100">
           <PortAction
-            label={translate(
-              'auto.components.sidebar.WorktreeCardPorts.33bc7d7495',
-              'Open in Browser'
-            )}
+            label={openBrowserLabel}
+            tooltipLabel={getPortOpenBrowserTooltipLabel(openBrowserLabel)}
             onClick={handleOpen}
           >
             <ExternalLink className="size-3" />

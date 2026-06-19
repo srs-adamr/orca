@@ -22,6 +22,7 @@ import { getActiveRuntimeTarget } from '@/runtime/runtime-rpc-client'
 import { getRuntimeEnvironmentIdForWorktree } from '@/lib/worktree-runtime-owner'
 import {
   killWorkspacePortForTarget,
+  getPortOpenBrowserTooltipLabel,
   openWorkspacePortInBrowser,
   refreshWorkspacePortScanAfterStop,
   resolvePortOpenInOrcaBrowser,
@@ -562,6 +563,10 @@ function LocalPortRow({
       : port.kind === 'container'
         ? 'Container or forwarded service'
         : 'Unassigned'
+  const openBrowserLabel = translate(
+    'auto.components.right.sidebar.PortsPanel.b22b128b2a',
+    'Open in Browser'
+  )
   const confidenceLabel =
     port.kind === 'workspace' ? (port.owner.confidence === 'cwd' ? 'cwd' : 'command') : null
   const canStopProcess =
@@ -610,19 +615,13 @@ function LocalPortRow({
                   size="icon-xs"
                   className="text-muted-foreground hover:text-foreground"
                   onClick={handleOpenBrowserButtonClick}
-                  aria-label={translate(
-                    'auto.components.right.sidebar.PortsPanel.b22b128b2a',
-                    'Open in Browser'
-                  )}
+                  aria-label={openBrowserLabel}
                 >
                   <ExternalLink size={13} />
                 </Button>
               </TooltipTrigger>
               <TooltipContent side="top" sideOffset={4}>
-                {translate(
-                  'auto.components.right.sidebar.PortsPanel.b22b128b2a',
-                  'Open in Browser'
-                )}
+                {getPortOpenBrowserTooltipLabel(openBrowserLabel)}
               </TooltipContent>
             </Tooltip>
             <Tooltip>
@@ -684,7 +683,7 @@ function LocalPortRow({
           onSelect={() => handleOpenBrowser()}
         >
           <ExternalLink size={13} />
-          {translate('auto.components.right.sidebar.PortsPanel.b22b128b2a', 'Open in Browser')}
+          {openBrowserLabel}
         </ContextMenuItem>
         <ContextMenuItem className={LOCAL_PORT_MENU_ITEM_CLASS} onSelect={handleCopy}>
           <Copy size={13} />
@@ -1101,6 +1100,21 @@ function ForwardedPortRow({
   )
 
   const advertisedBrowserUrl = advertisedBrowserUrlForForwardedRow(entry)
+  const openBrowserLabel = translate(
+    'auto.components.right.sidebar.PortsPanel.b22b128b2a',
+    'Open in Browser'
+  )
+  const openBrowserTitle = getPortOpenBrowserTooltipLabel(
+    advertisedBrowserUrl
+      ? translate(
+          'auto.components.right.sidebar.PortsPanel.75aeea592f',
+          'Open {{value0}} in Browser',
+          {
+            value0: advertisedBrowserUrl
+          }
+        )
+      : openBrowserLabel
+  )
 
   return (
     <div className="group flex items-center gap-2 py-1 px-1 -mx-1 rounded hover:bg-accent/50 transition-colors">
@@ -1131,15 +1145,7 @@ function ForwardedPortRow({
           type="button"
           className="p-1 rounded hover:bg-accent transition-colors text-muted-foreground hover:text-foreground"
           onClick={handleOpenBrowserButtonClick}
-          title={
-            advertisedBrowserUrl
-              ? translate(
-                  'auto.components.right.sidebar.PortsPanel.75aeea592f',
-                  'Open {{value0}} in Browser',
-                  { value0: advertisedBrowserUrl }
-                )
-              : translate('auto.components.right.sidebar.PortsPanel.b22b128b2a', 'Open in Browser')
-          }
+          title={openBrowserTitle}
         >
           <ExternalLink size={13} />
         </button>

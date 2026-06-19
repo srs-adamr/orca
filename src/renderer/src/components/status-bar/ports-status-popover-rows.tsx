@@ -6,6 +6,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import {
   addressForPort,
   canStopWorkspacePort,
+  getPortOpenBrowserTooltipLabel,
   goToWorkspacePortOwner,
   killWorkspacePortForTarget,
   openWorkspacePortInBrowser,
@@ -21,11 +22,13 @@ import { translate } from '@/i18n/i18n'
 
 function PortAction({
   label,
+  tooltipLabel = label,
   onClick,
   disabled,
   children
 }: {
   label: string
+  tooltipLabel?: string
   onClick: (event: React.MouseEvent<HTMLButtonElement>) => void
   disabled?: boolean
   children: React.ReactNode
@@ -57,7 +60,7 @@ function PortAction({
         {disabled ? <span className="inline-flex">{button}</span> : button}
       </TooltipTrigger>
       <TooltipContent side="top" sideOffset={4} className="z-[70]">
-        {label}
+        {tooltipLabel}
       </TooltipContent>
     </Tooltip>
   )
@@ -91,6 +94,10 @@ export function PortRow({
   )
   const processLabel = port.processName ?? (port.pid ? `PID ${port.pid}` : 'Unknown process')
   const canStop = canStopWorkspacePort(port)
+  const openBrowserLabel = translate(
+    'auto.components.status.bar.ports.status.popover.rows.085f4f0334',
+    'Open in Browser'
+  )
 
   const handleOpen = useCallback(
     (event: React.MouseEvent<HTMLButtonElement>) => {
@@ -222,10 +229,8 @@ export function PortRow({
           </Tooltip>
           <div className="absolute inset-y-0 right-0 flex items-center gap-0.5 rounded-md border border-border/40 bg-popover/95 px-0.5 can-hover:opacity-0 shadow-xs transition-opacity group-hover/port:opacity-100 group-focus-within/port:opacity-100">
             <PortAction
-              label={translate(
-                'auto.components.status.bar.ports.status.popover.rows.085f4f0334',
-                'Open in Browser'
-              )}
+              label={openBrowserLabel}
+              tooltipLabel={getPortOpenBrowserTooltipLabel(openBrowserLabel)}
               onClick={handleOpen}
             >
               <ExternalLink className="size-3" />

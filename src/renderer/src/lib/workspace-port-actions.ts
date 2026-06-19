@@ -46,6 +46,18 @@ export function shouldOpenWorkspacePortInOrcaBrowser(
   return settings?.openLinksInApp === true
 }
 
+function isMacShortcutPlatform(): boolean {
+  return typeof navigator !== 'undefined' && navigator.userAgent.includes('Mac')
+}
+
+export function getPortSystemBrowserHint(isMac: boolean = isMacShortcutPlatform()): string {
+  return isMac ? '⇧⌘+click for system browser' : 'Shift+Ctrl+click for system browser'
+}
+
+export function getPortOpenBrowserTooltipLabel(openLabel: string, isMac?: boolean): string {
+  return `${openLabel}. ${getPortSystemBrowserHint(isMac)}`
+}
+
 type PortOpenClickEvent = Pick<MouseEvent, 'metaKey' | 'ctrlKey' | 'shiftKey'>
 
 export function resolvePortOpenInOrcaBrowser({
