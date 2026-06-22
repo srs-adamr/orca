@@ -4057,6 +4057,50 @@ describe('connectPanePty', () => {
     expect(mockStoreState.clearAgentLaunchConfig).toHaveBeenCalledWith(paneKey)
   })
 
+  it('clears launch config when an agent startup spawn produces no PTY', async () => {
+    const { connectPanePty } = await import('./pty-connection')
+    const transport = createMockTransport()
+    transportFactoryQueue.push(transport)
+    const paneKey = makePaneKey('tab-1', LEAF_1)
+    const launchConfig = { agentCommand: 'codex', agentArgs: '', agentEnv: {} }
+    mockStoreState = {
+      ...mockStoreState,
+      tabsByWorktree: { 'wt-1': [{ id: 'tab-1', ptyId: null }] },
+      ptyIdsByTabId: { 'tab-1': [] },
+      terminalLayoutsByTabId: {
+        'tab-1': {
+          root: { type: 'leaf', leafId: LEAF_1 },
+          activeLeafId: LEAF_1,
+          expandedLeafId: null,
+          ptyIdsByLeafId: {}
+        }
+      }
+    } as StoreState
+
+    connectPanePty(
+      createPane(1) as never,
+      createManager(1) as never,
+      createDeps({
+        startup: {
+          command: 'codex',
+          launchConfig,
+          launchToken: 'launch-token-1',
+          launchAgent: 'codex'
+        }
+      }) as never
+    )
+    await flushAsyncTicks(20)
+    await new Promise((resolve) => setTimeout(resolve, 70))
+
+    expect(mockStoreState.registerAgentLaunchConfig).toHaveBeenCalledWith(paneKey, launchConfig, {
+      agentType: 'codex',
+      launchToken: 'launch-token-1',
+      tabId: 'tab-1',
+      leafId: LEAF_1
+    })
+    expect(mockStoreState.clearAgentLaunchConfig).toHaveBeenCalledWith(paneKey)
+  })
+
   it('prefers live-entry launch config for pane cold restore when status survived PTY loss', async () => {
     const { connectPanePty } = await import('./pty-connection')
     const transport = createMockTransport('fresh-pty')
