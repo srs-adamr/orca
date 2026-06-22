@@ -794,8 +794,11 @@ export class RateLimitService {
 
   private shouldAllowClaudePtyFallback(): boolean {
     // Why: automatic recovery uses Claude CLI as the next source, but Windows
-    // hidden PTY support remains less reliable than host/WSL shells.
-    return process.platform !== 'win32'
+    // hidden PTY support remains less reliable than host/WSL shells. macOS is
+    // also excluded: these automatic active quota refreshes run on
+    // startup/focus/timers and must never spawn hidden Claude Code, which can
+    // trigger macOS App Data (TCC) permission prompts.
+    return process.platform !== 'win32' && process.platform !== 'darwin'
   }
 
   private withFetchingStatus(
