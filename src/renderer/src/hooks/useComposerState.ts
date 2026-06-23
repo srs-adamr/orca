@@ -3568,7 +3568,8 @@ export function useComposerState(options: UseComposerStateOptions): UseComposerS
           note: trimmedNote,
           startupPlan,
           quickPrompt,
-          quickTelemetry
+          quickTelemetry,
+          ...(createMultiple ? { suppressTerminalFocusOnCompletion: true } : {})
         }
 
         // Why: git fetch + `git worktree add` can take 10–15s; holding the modal

@@ -95,7 +95,7 @@ type NewWorkspaceComposerCardProps = {
   canReuseSelectedBranch: boolean
   reuseSelectedBranch: boolean
   onReuseSelectedBranchChange: (next: boolean) => void
-  /** Shows the footer "create another after this" toggle — worktree targets only. */
+  /** Shows the footer "Create more" switch — worktree targets only. */
   showCreateMultiple?: boolean
   createMultiple?: boolean
   onCreateMultipleChange?: (next: boolean) => void
@@ -817,7 +817,10 @@ export default function NewWorkspaceComposerCard({
           />
         </div>
 
-        <div>
+        {/* Why: Advanced is a disclosure header, so keep it visually grouped
+            with the content or footer below it while preserving normal spacing
+            from the Agent field above. */}
+        <div className="!mb-2">
           <Button
             type="button"
             variant="ghost"
@@ -835,6 +838,7 @@ export default function NewWorkspaceComposerCard({
         <div
           className={cn(
             'grid overflow-hidden transition-[grid-template-rows] duration-200 ease-out',
+            !advancedOpen && '!mt-2',
             advancedOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]'
           )}
           aria-hidden={!advancedOpen}
@@ -1057,35 +1061,31 @@ export default function NewWorkspaceComposerCard({
         )}
       >
         {showCreateMultiple ? (
-          <label className="group flex w-fit cursor-pointer items-center gap-2 text-xs text-foreground">
+          <button
+            type="button"
+            role="switch"
+            aria-checked={createMultiple}
+            onClick={() => onCreateMultipleChange?.(!createMultiple)}
+            className="group flex w-fit cursor-pointer items-center gap-2 rounded-md text-xs text-foreground outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50"
+          >
             <span
+              aria-hidden
               className={cn(
-                'flex size-4 items-center justify-center rounded-[3px] border shadow-sm transition',
-                createMultiple
-                  ? 'border-emerald-500/60 bg-emerald-500 text-white'
-                  : 'border-foreground/20 bg-background dark:border-white/20 dark:bg-muted/10'
+                'relative inline-flex h-5 w-9 shrink-0 items-center rounded-full border border-transparent transition-colors',
+                createMultiple ? 'bg-foreground' : 'bg-muted-foreground/30'
               )}
             >
-              <Check
+              <span
                 className={cn(
-                  'size-3 transition-opacity',
-                  createMultiple ? 'opacity-100' : 'opacity-0'
+                  'pointer-events-none block size-3.5 rounded-full bg-background shadow-sm transition-transform',
+                  createMultiple ? 'translate-x-4' : 'translate-x-0.5'
                 )}
               />
             </span>
-            <input
-              type="checkbox"
-              checked={createMultiple}
-              onChange={(event) => onCreateMultipleChange?.(event.target.checked)}
-              className="sr-only"
-            />
             <span>
-              {translate(
-                'auto.components.NewWorkspaceComposerCard.createMultiple',
-                'Create another after this'
-              )}
+              {translate('auto.components.NewWorkspaceComposerCard.createMultiple', 'Create more')}
             </span>
-          </label>
+          </button>
         ) : null}
         <Button
           onClick={() => void onCreate()}
