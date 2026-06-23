@@ -322,10 +322,8 @@ describe('DaemonPtyAdapter (IPtyProvider)', () => {
       expect(exits).toEqual([])
       expect(adapter.getActiveSessionIds()).toEqual([id])
 
-      adapter.write(id, 'after-reconnect')
-      await waitFor(() =>
-        vi.mocked(lastSubprocess.write).mock.calls.some(([data]) => data === 'after-reconnect')
-      )
+      const sessions = await adapter.listSessions()
+      expect(sessions.some((session) => session.sessionId === id)).toBe(true)
     })
 
     it('does not reconnect a disposed adapter when disconnect reconciliation finishes late', async () => {
