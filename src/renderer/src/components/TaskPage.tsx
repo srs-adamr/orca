@@ -1505,26 +1505,19 @@ function ReviewChipAvatar({
 }: {
   reviewer: GitHubPRPrimaryReviewer | null
 }): React.JSX.Element {
-  if (reviewer?.avatarUrl) {
+  if (reviewer?.login) {
+    // Why: `gh pr list --json reviewRequests` can return only logins; GitHub's
+    // public avatar endpoint keeps the list visual aligned with assignee cells.
+    const avatarUrl = reviewer.avatarUrl || `https://github.com/${reviewer.login}.png?size=40`
     return (
       <img
-        src={reviewer.avatarUrl}
+        src={avatarUrl}
         alt=""
         loading="lazy"
         decoding="async"
         title={reviewer.name ? `${reviewer.name} (${reviewer.login})` : reviewer.login}
         className="size-5 shrink-0 rounded-full border border-border/50 bg-muted object-cover"
       />
-    )
-  }
-  if (reviewer?.login) {
-    return (
-      <span
-        title={reviewer.login}
-        className="inline-flex size-5 shrink-0 items-center justify-center rounded-full border border-border/50 bg-muted text-[10px] font-medium text-muted-foreground"
-      >
-        {reviewer.login.slice(0, 1).toUpperCase()}
-      </span>
     )
   }
   return <Users className="size-5 shrink-0" />
