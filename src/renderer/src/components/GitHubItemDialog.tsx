@@ -161,6 +161,7 @@ import {
   filterGitHubPRReviewerCandidates,
   getGitHubPRReviewerQueryState
 } from '@/components/github/github-pr-reviewer-candidate-filter'
+import { githubAvatarUrl } from '@/components/github/github-issue-comment-helpers'
 import { presentGitHubPRMergeState } from '@/components/github-pr-merge-state'
 import {
   GITHUB_PR_MERGE_METHOD_LABELS,
@@ -394,25 +395,15 @@ function ReviewerAvatar({
   login: string
   avatarUrl: string
 }): React.JSX.Element {
-  if (avatarUrl) {
-    return (
-      <img
-        src={avatarUrl}
-        alt=""
-        loading="lazy"
-        decoding="async"
-        title={login}
-        className="size-6 shrink-0 rounded-full border border-border/50 bg-muted object-cover"
-      />
-    )
-  }
   return (
-    <span
+    <img
+      src={avatarUrl || githubAvatarUrl(login)}
+      alt=""
+      loading="lazy"
+      decoding="async"
       title={login}
-      className="inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-border/50 bg-muted text-[10px] font-medium text-muted-foreground"
-    >
-      {login.slice(0, 1).toUpperCase()}
-    </span>
+      className="size-6 shrink-0 rounded-full border border-border/50 bg-muted object-cover"
+    />
   )
 }
 

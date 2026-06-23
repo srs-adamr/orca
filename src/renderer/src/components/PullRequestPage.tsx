@@ -154,6 +154,7 @@ import {
   filterGitHubPRReviewerCandidates,
   getGitHubPRReviewerQueryState
 } from '@/components/github/github-pr-reviewer-candidate-filter'
+import { githubAvatarUrl } from '@/components/github/github-issue-comment-helpers'
 import { filterGitHubMentionOptions } from '@/components/github/github-mention-option-filter'
 import {
   getCommentBodySubmitState,
@@ -447,25 +448,15 @@ function ReviewerAvatar({
   login: string
   avatarUrl: string
 }): React.JSX.Element {
-  if (avatarUrl) {
-    return (
-      <img
-        src={avatarUrl}
-        alt=""
-        loading="lazy"
-        decoding="async"
-        title={login}
-        className="size-6 shrink-0 rounded-full border border-border/50 bg-muted object-cover"
-      />
-    )
-  }
   return (
-    <span
+    <img
+      src={avatarUrl || githubAvatarUrl(login)}
+      alt=""
+      loading="lazy"
+      decoding="async"
       title={login}
-      className="inline-flex size-6 shrink-0 items-center justify-center rounded-full border border-border/50 bg-muted text-[10px] font-medium text-muted-foreground"
-    >
-      {login.slice(0, 1).toUpperCase()}
-    </span>
+      className="size-6 shrink-0 rounded-full border border-border/50 bg-muted object-cover"
+    />
   )
 }
 
@@ -5795,7 +5786,7 @@ function GHCommentComposer({
   )
 
   return (
-    <div className={cn('flex flex-col items-start gap-2', className)}>
+    <div className={cn('relative', className)}>
       <MentionTextarea
         textareaRef={textareaRef}
         value={body}
@@ -5808,21 +5799,29 @@ function GHCommentComposer({
         rows={4}
         mentionOptions={mentionOptions}
         wrapperClassName="flex min-h-20 w-full items-stretch"
-        className="scrollbar-sleek block h-20 max-h-[240px] min-h-20 w-full resize-none overflow-y-auto rounded-md border border-input bg-card px-3 py-2 text-[13px] leading-5 placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
+        className="scrollbar-sleek block h-20 max-h-[240px] min-h-20 w-full resize-none overflow-y-auto rounded-md border border-input bg-card px-3 py-2 pb-12 pr-12 text-[13px] leading-5 placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring"
       />
-      <Button
-        onClick={handleSubmit}
-        disabled={!canSubmitComment || submitting}
-        className="gap-2"
-        aria-label={translate('auto.components.PullRequestPage.161d91ef02', 'Send comment')}
-      >
-        {submitting ? (
-          <LoaderCircle className="size-3.5 animate-spin" />
-        ) : (
-          <Send className="size-3.5" />
-        )}
-        {translate('auto.components.PullRequestPage.3450247584', 'Comment')}
-      </Button>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <Button
+            type="button"
+            size="icon-sm"
+            onClick={handleSubmit}
+            disabled={!canSubmitComment || submitting}
+            className="absolute bottom-3 right-3 shadow-sm"
+            aria-label={translate('auto.components.PullRequestPage.161d91ef02', 'Send comment')}
+          >
+            {submitting ? (
+              <LoaderCircle className="size-4 animate-spin" />
+            ) : (
+              <Send className="size-4" />
+            )}
+          </Button>
+        </TooltipTrigger>
+        <TooltipContent>
+          {translate('auto.components.PullRequestPage.161d91ef02', 'Send comment')}
+        </TooltipContent>
+      </Tooltip>
     </div>
   )
 }
