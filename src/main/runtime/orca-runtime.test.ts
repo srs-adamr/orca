@@ -14800,6 +14800,62 @@ describe('OrcaRuntimeService', () => {
     })
   })
 
+  it('does not report stale persisted tabs or hydrated done hook rows as live mobile activity', async () => {
+    const leafId = '44444444-4444-4444-8444-444444444444'
+    const paneKey = `host-tab:${leafId}`
+    const { runtimeStore } = makeRuntimeStoreWithWorkspaceSession(
+      makeWorkspaceSessionWithHeadlessTerminal({
+        activeTabId: 'host-tab',
+        activeTabIdByWorktree: { [TEST_WORKTREE_ID]: 'host-tab' },
+        tabsByWorktree: {
+          [TEST_WORKTREE_ID]: [
+            {
+              id: 'host-tab',
+              ptyId: 'persisted-pty',
+              worktreeId: TEST_WORKTREE_ID,
+              title: 'Codex Done',
+              customTitle: null,
+              color: null,
+              sortOrder: 0,
+              createdAt: 1
+            }
+          ]
+        },
+        terminalLayoutsByTabId: {
+          'host-tab': makeHeadlessTerminalLayout({ [leafId]: 'persisted-pty' })
+        }
+      })
+    )
+    const runtime = new OrcaRuntimeService(runtimeStore as never, undefined, {
+      getAgentStatusSnapshot: () => [
+        {
+          paneKey,
+          worktreeId: TEST_WORKTREE_ID,
+          tabId: 'host-tab',
+          state: 'done',
+          prompt: 'old prompt',
+          agentType: 'codex',
+          lastAssistantMessage: 'old done',
+          connectionId: null,
+          receivedAt: 1000,
+          stateStartedAt: 900
+        }
+      ]
+    })
+
+    const { worktrees } = await runtime.getWorktreePs()
+    const summary = worktrees.find((w) => w.worktreeId === TEST_WORKTREE_ID)
+
+    expect(await runtime.listTerminals(`id:${TEST_WORKTREE_ID}`)).toMatchObject({ terminals: [] })
+    expect(summary).toMatchObject({
+      worktreeId: TEST_WORKTREE_ID,
+      liveTerminalCount: 0,
+      hasAttachedPty: false,
+      status: 'inactive',
+      agents: []
+    })
+  })
+
   it('falls back to the path-keyed GitHub cache entry', async () => {
     const runtimeStore = {
       ...store,
@@ -14899,6 +14955,42 @@ describe('OrcaRuntimeService', () => {
         interrupted: false,
         stateStartedAt: expect.any(Number),
         updatedAt: expect.any(Number)
+      })
+    ])
+  })
+
+  it('keeps agent rows for connected PTYs without a mounted renderer leaf', async () => {
+    const runtime = new OrcaRuntimeService(store)
+    const leafId = '55555555-5555-4555-8555-555555555555'
+    const paneKey = `headless-tab:${leafId}`
+    runtime['recordPtyWorktree']('headless-pty', TEST_WORKTREE_ID, {
+      connected: true,
+      tabId: 'headless-tab',
+      paneKey
+    })
+
+    runtime.onPtyData(
+      'headless-pty',
+      '\x1b]9999;{"state":"working","prompt":"ship it","agentType":"codex","lastAssistantMessage":"on it"}\x07',
+      321
+    )
+
+    const { worktrees } = await runtime.getWorktreePs()
+    const summary = worktrees.find((w) => w.worktreeId === TEST_WORKTREE_ID)
+
+    expect(summary).toMatchObject({
+      liveTerminalCount: 1,
+      hasAttachedPty: true,
+      hasHostSidebarActivity: true,
+      status: 'active'
+    })
+    expect(summary?.agents).toEqual([
+      expect.objectContaining({
+        paneKey,
+        state: 'working',
+        agentType: 'codex',
+        prompt: 'ship it',
+        lastAssistantMessage: 'on it'
       })
     ])
   })

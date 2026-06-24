@@ -8599,6 +8599,8 @@ export class OrcaRuntimeService {
     }
 
     const countedPtyIds = new Set<string>()
+    const liveAgentPaneKeys = new Set<string>()
+    const liveAgentPtyIds = new Set<string>()
     for (const leaf of this.leaves.values()) {
       const summary = this.getSummaryForRuntimeWorktreeId(
         summaries,
@@ -8608,8 +8610,10 @@ export class OrcaRuntimeService {
       if (!summary) {
         continue
       }
+      liveAgentPaneKeys.add(this.makeRuntimePaneKey(leaf))
       if (leaf.ptyId) {
         countedPtyIds.add(leaf.ptyId)
+        liveAgentPtyIds.add(leaf.ptyId)
       }
       if (leaf.ptyId && leaf.connected) {
         summary.hasHostSidebarActivity = true
@@ -8642,9 +8646,14 @@ export class OrcaRuntimeService {
       if (!summary) {
         continue
       }
+      if (pty.paneKey) {
+        liveAgentPaneKeys.add(pty.paneKey)
+      }
+      liveAgentPtyIds.add(pty.ptyId)
       const previousLastOutputAt = summary.lastOutputAt
       summary.liveTerminalCount += 1
       summary.hasAttachedPty = true
+      summary.hasHostSidebarActivity = true
       summary.lastOutputAt = maxTimestamp(summary.lastOutputAt, pty.lastOutputAt)
       summary.status = mergeWorktreeStatus(summary.status, 'active')
       if (
@@ -8655,30 +8664,9 @@ export class OrcaRuntimeService {
       }
     }
 
+    // Why: tabsByWorktree is restore state, not proof of a live terminal. Mobile
+    // activity must come from runtime leaves or connected PTY records only.
     const session = this.store?.getWorkspaceSession?.()
-    for (const [worktreeId, tabs] of Object.entries(session?.tabsByWorktree ?? {})) {
-      if (tabs.length === 0) {
-        continue
-      }
-      const summary = this.getSummaryForRuntimeWorktreeId(summaries, resolvedWorktrees, worktreeId)
-      if (!summary) {
-        continue
-      }
-      // Why: desktop can show terminal tabs that are not mounted as renderer
-      // leaves and are not currently visible in the PTY provider list. Mobile
-      // still needs those worktrees to show as terminal-bearing entries.
-      summary.liveTerminalCount = Math.max(summary.liveTerminalCount, tabs.length)
-      summary.hasAttachedPty = summary.hasAttachedPty || tabs.some((tab) => tab.ptyId !== null)
-      if (tabs.some((tab) => tab.ptyId !== null && this.ptysById.get(tab.ptyId)?.connected)) {
-        summary.hasHostSidebarActivity = true
-      }
-      for (const tab of tabs) {
-        summary.status = mergeWorktreeStatus(
-          summary.status,
-          getSavedTabWorktreeStatus(tab.title, tab.ptyId !== null)
-        )
-      }
-    }
 
     // Why: surface the desktop's focused worktree so mobile can scroll it into
     // view and highlight it. Resolve through getSummaryForRuntimeWorktreeId so
@@ -8694,7 +8682,10 @@ export class OrcaRuntimeService {
       }
     }
 
-    this.attachAgentRowsToSummaries(summaries)
+    this.attachAgentRowsToSummaries(summaries, {
+      livePaneKeys: liveAgentPaneKeys,
+      livePtyIds: liveAgentPtyIds
+    })
 
     const sorted = [...summaries.values()].sort(compareWorktreePs)
     return {
@@ -8708,7 +8699,10 @@ export class OrcaRuntimeService {
   // agent list, mirroring the desktop sidebar. Lineage parent is resolved from
   // the orchestration db (paneKey-keyed), not the OSC payload, since spawn
   // hierarchy is pane-level state tracked separately from terminal output.
-  private attachAgentRowsToSummaries(summaries: Map<string, RuntimeWorktreePsSummary>): void {
+  private attachAgentRowsToSummaries(
+    summaries: Map<string, RuntimeWorktreePsSummary>,
+    liveEvidence: { livePaneKeys: ReadonlySet<string>; livePtyIds: ReadonlySet<string> }
+  ): void {
     // Why: most agents report via hooks (agent-hooks/server), not OSC, so the
     // hook snapshot is the primary source — same one the desktop sidebar reads.
     // OSC-only entries (no hook) are merged in as a fallback, keyed by paneKey.
@@ -8716,6 +8710,7 @@ export class OrcaRuntimeService {
       string,
       {
         paneKey: string
+        ptyId?: string
         worktreeId?: string
         state: ParsedAgentStatusPayload['state']
         agentType: string | null
@@ -8732,6 +8727,7 @@ export class OrcaRuntimeService {
       const { payload } = snapshot
       rowSources.set(snapshot.paneKey, {
         paneKey: snapshot.paneKey,
+        ptyId: snapshot.ptyId,
         worktreeId: snapshot.worktreeId,
         state: payload.state,
         agentType: payload.agentType ?? null,
@@ -8767,6 +8763,12 @@ export class OrcaRuntimeService {
     for (const src of rowSources.values()) {
       const worktreeId = src.worktreeId
       if (!worktreeId || !summaries.has(worktreeId)) {
+        continue
+      }
+      if (
+        !liveEvidence.livePaneKeys.has(src.paneKey) &&
+        (!src.ptyId || !liveEvidence.livePtyIds.has(src.ptyId))
+      ) {
         continue
       }
       const taskTitle = orchestrationByPaneKey?.[src.paneKey]?.taskTitle ?? null
@@ -22398,10 +22400,6 @@ function getLatestAgentCandidateTitleInfo(
     }
   }
   return latest
-}
-
-function getSavedTabWorktreeStatus(title: string, hasPty: boolean): RuntimeWorktreeStatus {
-  return getDetectedWorktreeStatus(detectAgentStatusFromTitle(title), hasPty)
 }
 
 function getDetectedWorktreeStatus(
