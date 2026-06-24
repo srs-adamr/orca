@@ -198,6 +198,7 @@ import {
 } from '../../../../src/session/mobile-session-route-helpers'
 import { resolveMarkdownFloatingActionsBottom } from '../../../../src/session/markdown-floating-actions-layout'
 import { resolveTabStripScrollOffset } from '../../../../src/session/tab-strip-scroll'
+import { activateOpenedSourceControlDiffTab } from '../../../../src/session/opened-mobile-session-tab'
 import {
   createMobileSessionCreateWarningState,
   dismissMobileSessionCreateWarningState,
@@ -3256,6 +3257,41 @@ export default function SessionScreen() {
     [client, worktreeId, scheduleDelayedAction, fetchSessionTabs]
   )
 
+  const handleOpenedFileDiffActivationSeqRef = useRef(0)
+  const handleOpenedFileDiff = useCallback(
+    (relativePath: string) => {
+      const activationSeq = ++handleOpenedFileDiffActivationSeqRef.current
+      const activeTabIdAtTap = activeSessionTabIdRef.current
+
+      let activated = false
+      const activateOpenedTab = async (): Promise<void> => {
+        // Route matching through the shared helper so the deterministic repro
+        // test exercises the same logic production runs.
+        const settled = await activateOpenedSourceControlDiffTab<MobileSessionTab>({
+          relativePath,
+          activeTabIdAtTap,
+          fetchSessionTabs,
+          getTabs: () => sessionTabsRef.current,
+          getActiveTabId: () => activeSessionTabIdRef.current,
+          getActivationState: () => ({
+            activated,
+            activationSeq,
+            latestActivationSeq: handleOpenedFileDiffActivationSeqRef.current
+          }),
+          switchSessionTab: (tab) => switchSessionTabRef.current?.(tab)
+        })
+        if (settled) {
+          activated = true
+        }
+      }
+
+      scheduleDelayedAction(() => void activateOpenedTab(), 300)
+      scheduleDelayedAction(() => void activateOpenedTab(), 900)
+      scheduleDelayedAction(() => void activateOpenedTab(), 1800)
+    },
+    [fetchSessionTabs, scheduleDelayedAction]
+  )
+
   const handleTerminalOpenUrl = useCallback(
     (handle: string, url: string) => {
       if (handle !== activeHandleRef.current) {
@@ -5142,6 +5178,7 @@ export default function SessionScreen() {
               branchContextLoaded={prContextLoaded && prRepoContextLoaded}
               availableWidth={sessionContentRowWidth}
               onRequestClose={() => setActivePanel(null)}
+              onOpenedFileDiff={handleOpenedFileDiff}
             />
           )}
         </View>

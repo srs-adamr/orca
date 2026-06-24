@@ -28,6 +28,7 @@ type Params = {
   origin: string
   embedded: boolean
   onRequestClose?: () => void
+  onOpenedFileDiff?: (relativePath: string) => void
   branchCompareState: MobileBranchCompareState
   mountedRef: MutableRefObject<boolean>
   busyActionRef: MutableRefObject<string | null>
@@ -46,6 +47,7 @@ export function useMobileSourceControlOpeners(params: Params) {
     origin,
     embedded,
     onRequestClose,
+    onOpenedFileDiff,
     branchCompareState,
     mountedRef,
     busyActionRef,
@@ -98,6 +100,7 @@ export function useMobileSourceControlOpeners(params: Params) {
         }
         triggerSelection()
         if (origin === 'session') {
+          onOpenedFileDiff?.(entry.path)
           // Why: when launched from the session screen, opening a file dismisses
           // this surface back to the session. In embedded mode there is nothing
           // to pop (the panel docks beside the terminal), so close the dock
@@ -140,6 +143,7 @@ export function useMobileSourceControlOpeners(params: Params) {
       hostId,
       mountedRef,
       name,
+      onOpenedFileDiff,
       onRequestClose,
       origin,
       router,
