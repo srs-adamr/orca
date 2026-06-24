@@ -33,6 +33,16 @@ type TerminalScrollVisibilityMemory = {
 
 const FOLLOW_OUTPUT_FLUSH_CHARS = 256 * 1024
 
+function isTransientTerminalEdgeSnap(current: ScrollState, previous: ScrollState): boolean {
+  if (previous.wasAtBottom || current.bufferType !== previous.bufferType) {
+    return false
+  }
+  if (current.baseY !== previous.baseY || current.viewportY === previous.viewportY) {
+    return false
+  }
+  return current.viewportY === 0 || current.wasAtBottom
+}
+
 export function useTerminalScrollVisibilityMemory({
   managerRef,
   isVisibleRef,
@@ -75,13 +85,17 @@ export function useTerminalScrollVisibilityMemory({
             return [pane.leafId, remembered.scrollState] as const
           }
           const state = captureScrollState(pane.terminal)
+          const stableState =
+            remembered && isTransientTerminalEdgeSnap(state, remembered.scrollState)
+              ? remembered.scrollState
+              : state
           if (!useRememberedSnapshots || !remembered) {
             visibleScrollSnapshotsRef.current.set(pane.leafId, {
-              scrollState: state,
+              scrollState: stableState,
               outputEpoch: getTerminalOutputEpoch(pane.terminal)
             })
           }
-          return [pane.leafId, state] as const
+          return [pane.leafId, stableState] as const
         })
       )
     },

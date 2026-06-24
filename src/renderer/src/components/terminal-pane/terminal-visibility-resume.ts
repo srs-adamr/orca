@@ -76,12 +76,13 @@ export function resumeTerminalVisibility({
     } else {
       resumeTerminalVisibilityHeavy(manager, isActive)
     }
-    restoreTerminalViewportPositions(manager, viewportPositions)
     if (!shouldUseLightTabResume) {
       // Why: this clear wipes the glyph atlas shared with other same-config
-      // terminals; the global reset rebuilds their render models too.
+      // terminals; do it before scroll restore because WebGL rebuild can
+      // disturb xterm's viewport bookkeeping during visibility resume.
       resetAllTerminalWebglAtlases()
     }
+    restoreTerminalViewportPositions(manager, viewportPositions)
   })
 }
 

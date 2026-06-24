@@ -77,6 +77,17 @@ describe('useTerminalScrollVisibilityMemory', () => {
   beforeEach(() => {
     resetHookRefs()
     vi.clearAllMocks()
+    mocks.captureScrollState.mockReset()
+    mocks.getTerminalOutputEpoch.mockReset()
+    mocks.isTerminalScrollRestoreInProgress.mockReset()
+    mocks.captureScrollState.mockImplementation(() => ({
+      bufferType: 'normal',
+      wasAtBottom: true,
+      viewportY: 0,
+      baseY: 0
+    }))
+    mocks.getTerminalOutputEpoch.mockImplementation(() => 1)
+    mocks.isTerminalScrollRestoreInProgress.mockImplementation(() => false)
   })
 
   afterEach(() => {
@@ -199,6 +210,50 @@ describe('useTerminalScrollVisibilityMemory', () => {
       userScrolledState
     )
     expect(mocks.captureScrollState).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the remembered non-bottom position when xterm reports a transient edge snap', () => {
+    const onScrollListeners: (() => void)[] = []
+    const terminal = {
+      onScroll: vi.fn((listener: () => void) => {
+        onScrollListeners.push(listener)
+        return { dispose: vi.fn() }
+      })
+    }
+    const manager = {
+      getPanes: vi.fn(() => [{ id: 1, leafId: 'leaf-1', terminal }])
+    }
+    const userScrolledState = {
+      bufferType: 'normal',
+      wasAtBottom: false,
+      viewportY: 42,
+      baseY: 100
+    }
+    const transientTopState = {
+      bufferType: 'normal',
+      wasAtBottom: false,
+      viewportY: 0,
+      baseY: 100
+    }
+    mocks.captureScrollState
+      .mockReturnValueOnce(userScrolledState)
+      .mockReturnValueOnce(transientTopState)
+
+    beginHookRender()
+    const visibilityMemory = useTerminalScrollVisibilityMemory({
+      managerRef: { current: manager as never },
+      isVisibleRef: { current: true },
+      visibleResumeCompleteRef: { current: true },
+      paneCount: 1
+    })
+    onScrollListeners[0]?.()
+
+    expect(visibilityMemory.captureViewportPositions(false).get('leaf-1' as never)).toBe(
+      userScrolledState
+    )
+    expect(visibilityMemory.captureViewportPositions(true).get('leaf-1' as never)).toBe(
+      userScrolledState
+    )
   })
 
   it('does not reuse a remembered snapshot when a pane id gets a new leaf', () => {

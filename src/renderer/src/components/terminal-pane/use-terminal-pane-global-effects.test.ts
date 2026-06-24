@@ -267,9 +267,9 @@ describe('useTerminalPaneGlobalEffects', () => {
       'flush:terminal-b',
       'resume',
       'fit-focus',
+      'reset-atlas',
       'restore:terminal-a',
-      'restore:terminal-b',
-      'reset-atlas'
+      'restore:terminal-b'
     ])
     expect(mocks.flushTerminalOutput).toHaveBeenNthCalledWith(1, terminalA, {
       maxChars: 256 * 1024

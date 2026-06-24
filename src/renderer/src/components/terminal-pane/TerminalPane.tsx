@@ -207,6 +207,19 @@ function isXtermHelperTextarea(target: EventTarget | null): target is HTMLElemen
   return target instanceof HTMLElement && target.classList.contains('xterm-helper-textarea')
 }
 
+function isTransientTerminalEdgeSnap(
+  current: TerminalScrollStateSnapshot,
+  previous: TerminalScrollStateSnapshot | undefined
+): boolean {
+  if (!previous || previous.wasAtBottom || current.bufferType !== previous.bufferType) {
+    return false
+  }
+  if (current.baseY !== previous.baseY || current.viewportY === previous.viewportY) {
+    return false
+  }
+  return current.viewportY === 0 || current.wasAtBottom
+}
+
 function arePaneTitleOverlayRectsEqual(
   a: Record<number, PaneTitleOverlayRect>,
   b: Record<number, PaneTitleOverlayRect>
@@ -718,19 +731,23 @@ export default function TerminalPane({
       ? Object.fromEntries(
           currentPanes.map((pane) => {
             const { bufferType, wasAtBottom, viewportY, baseY } = captureScrollState(pane.terminal)
+            const current = { bufferType, wasAtBottom, viewportY, baseY }
+            const previous = lastVisibleScrollStatesByLeafIdRef.current?.[pane.leafId]
+            const stable =
+              previous && isTransientTerminalEdgeSnap(current, previous) ? previous : current
             logTerminalScrollRestore('layout-persist', {
-              baseY,
-              bufferType,
+              baseY: stable.baseY,
+              bufferType: stable.bufferType,
               isVisible: isVisibleRef.current,
               leafId: pane.leafId,
               paneId: pane.id,
               source: 'persistLayoutSnapshot',
               tabId,
-              viewportY,
-              wasAtBottom,
+              viewportY: stable.viewportY,
+              wasAtBottom: stable.wasAtBottom,
               worktreeId
             })
-            return [pane.leafId, { bufferType, wasAtBottom, viewportY, baseY }]
+            return [pane.leafId, stable]
           })
         )
       : mergeCapturedLeafState<TerminalScrollStateSnapshot>({
@@ -845,18 +862,22 @@ export default function TerminalPane({
     return Object.fromEntries(
       manager.getPanes().map((pane) => {
         const { bufferType, wasAtBottom, viewportY, baseY } = captureScrollState(pane.terminal)
+        const current = { bufferType, wasAtBottom, viewportY, baseY }
+        const previous = lastVisibleScrollStatesByLeafIdRef.current?.[pane.leafId]
+        const stable =
+          previous && isTransientTerminalEdgeSnap(current, previous) ? previous : current
         logTerminalScrollRestore('capture-current', {
-          baseY,
-          bufferType,
+          baseY: stable.baseY,
+          bufferType: stable.bufferType,
           leafId: pane.leafId,
           paneId: pane.id,
           source: 'visible-cleanup',
           tabId,
-          viewportY,
-          wasAtBottom,
+          viewportY: stable.viewportY,
+          wasAtBottom: stable.wasAtBottom,
           worktreeId
         })
-        return [pane.leafId, { bufferType, wasAtBottom, viewportY, baseY }]
+        return [pane.leafId, stable]
       })
     )
   }, [tabId, worktreeId])
