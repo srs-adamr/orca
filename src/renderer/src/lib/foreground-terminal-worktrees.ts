@@ -1,19 +1,41 @@
-let foregroundWorktreeIds = new Set<string>()
+let explicitForegroundWorktreeIds = new Set<string>()
+const visibleTerminalClaimsByToken = new Map<symbol, string>()
 
-export function setForegroundTerminalWorktreeIds(
-  worktreeIds: Iterable<string | null | undefined>
-): void {
-  foregroundWorktreeIds = new Set(
+function normalizeWorktreeIds(worktreeIds: Iterable<string | null | undefined>): Set<string> {
+  return new Set(
     Array.from(worktreeIds).filter(
       (worktreeId): worktreeId is string => typeof worktreeId === 'string' && worktreeId.length > 0
     )
   )
 }
 
+export function setForegroundTerminalWorktreeIds(
+  worktreeIds: Iterable<string | null | undefined>
+): void {
+  explicitForegroundWorktreeIds = normalizeWorktreeIds(worktreeIds)
+}
+
+export function registerVisibleTerminalWorktree(worktreeId: string | null | undefined): () => void {
+  const normalized = normalizeWorktreeIds([worktreeId])
+  const id = Array.from(normalized)[0]
+  if (!id) {
+    return () => {}
+  }
+
+  const token = Symbol(id)
+  visibleTerminalClaimsByToken.set(token, id)
+  return () => {
+    visibleTerminalClaimsByToken.delete(token)
+  }
+}
+
 export function getForegroundTerminalWorktreeIds(): string[] {
-  return Array.from(foregroundWorktreeIds)
+  return Array.from(
+    new Set([...explicitForegroundWorktreeIds, ...visibleTerminalClaimsByToken.values()])
+  )
 }
 
 export function resetForegroundTerminalWorktreeIdsForTests(): void {
-  foregroundWorktreeIds = new Set()
+  explicitForegroundWorktreeIds = new Set()
+  visibleTerminalClaimsByToken.clear()
 }

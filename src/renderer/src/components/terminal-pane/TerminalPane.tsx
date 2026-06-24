@@ -111,6 +111,7 @@ import { keybindingMatchesAction } from '../../../../shared/keybindings'
 import { pasteTerminalClipboard } from './terminal-clipboard-paste'
 import { scheduleImagePasteWebglAtlasRecovery } from './terminal-webgl-paste-recovery'
 import { restoreTerminalFitToDesktop, restoreTerminalFitsToDesktop } from './terminal-fit-restore'
+import { useVisibleTerminalWorktreeClaim } from './use-visible-terminal-worktree-claim'
 
 // Why: registry lives in a leaf module so the store slice can import it
 // without re-entering the `slice → TerminalPane → store → slice` cycle
@@ -260,6 +261,8 @@ export default function TerminalPane({
   isActiveRef.current = isActive
   const isVisibleRef = useRef(isVisible)
   isVisibleRef.current = isVisible
+
+  useVisibleTerminalWorktreeClaim({ isVisible, worktreeId })
 
   const [expandedPaneId, setExpandedPaneId] = useState<number | null>(null)
   // Why: tracked in React state (not derived from managerRef.getPanes().length)
