@@ -19,6 +19,9 @@ type ChecksPanelEmptyStateCopy = {
   description: string
 }
 
+/**
+ * Chooses neutral empty-state copy when GitHub review status is still ambiguous.
+ */
 export function getChecksPanelEmptyStateCopy(
   input: ChecksPanelEmptyStateInput
 ): ChecksPanelEmptyStateCopy {
@@ -158,6 +161,9 @@ export function getChecksPanelEmptyStateCopy(
   }
 }
 
+/**
+ * Separates local-only branch guidance from hosted-review refresh uncertainty.
+ */
 export function shouldShowChecksPanelPublishBranchAction(input: {
   hostedReviewBlockedReason: HostedReviewCreationBlockedReason | undefined
   hasUpstream: boolean | undefined

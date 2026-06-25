@@ -1484,6 +1484,9 @@ function isPRRefreshStateExpired(state: PRRefreshState, now: number): boolean {
   return expiryAt !== null && now > expiryAt
 }
 
+/**
+ * Captures the exact refresh snapshot a later timeout or request is allowed to clear.
+ */
 export function buildGitHubPRRefreshStateClearToken(
   state: PRRefreshState | undefined,
   sequences: Record<string, number>,
@@ -1499,6 +1502,9 @@ export function buildGitHubPRRefreshStateClearToken(
   }
 }
 
+/**
+ * Returns the wall-clock expiry for transient refresh states; settled states persist.
+ */
 export function getGitHubPRRefreshStateExpiryAt(state: PRRefreshState | undefined): number | null {
   if (!state) {
     return null
@@ -1518,6 +1524,9 @@ function isExpiredActivePRRefreshState(state: PRRefreshState, now: number): bool
   return ACTIVE_PR_REFRESH_STATUSES.has(state.status) && isPRRefreshStateExpired(state, now)
 }
 
+/**
+ * Reads refresh state for UI selectors while hiding stale active entries from view.
+ */
 export function getEffectiveGitHubPRRefreshState(
   states: Record<string, PRRefreshState>,
   cacheKey: string,
