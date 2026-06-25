@@ -14,6 +14,7 @@ import { YamlThemeImportButton } from './YamlThemeImportButton'
 import type { UseWarpThemeImportReturn } from './useWarpThemeImport'
 import { getAvailableTerminalThemeOptions } from '@/lib/terminal-theme'
 import { translate } from '@/i18n/i18n'
+import { cn } from '@/lib/utils'
 
 type TerminalThemeTarget = 'dark' | 'light'
 
@@ -47,6 +48,7 @@ export function TerminalThemeCatalogSection({
   const isLightTarget = target === 'light'
   const matchDarkMode = !settings.terminalUseSeparateLightTheme
   const lightModeMatchesDark = isLightTarget && matchDarkMode
+  const showCustomControls = !lightModeMatchesDark
   const selectedTheme = isLightTarget ? settings.terminalThemeLight : settings.terminalThemeDark
   const pickerTitle = isLightTarget
     ? translate('auto.components.settings.TerminalThemeSections.8273bc75d7', 'Light Theme')
@@ -94,7 +96,7 @@ export function TerminalThemeCatalogSection({
       ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_360px]">
-        <div className="space-y-6">
+        <div>
           <div className="space-y-3">
             <SearchableSetting
               title={translate(
@@ -169,8 +171,22 @@ export function TerminalThemeCatalogSection({
             ) : null}
           </div>
 
-          {lightModeMatchesDark ? null : (
-            <>
+          <div
+            className={cn(
+              'grid overflow-hidden transition-[grid-template-rows,padding-top] duration-200 ease-out',
+              showCustomControls ? 'grid-rows-[1fr] pt-6' : 'grid-rows-[0fr] pt-0'
+            )}
+            aria-hidden={!showCustomControls}
+            inert={!showCustomControls}
+          >
+            <div
+              className={cn(
+                'min-h-0 space-y-6 transition-[opacity,transform] duration-150 ease-out',
+                showCustomControls
+                  ? 'translate-y-0 opacity-100'
+                  : 'pointer-events-none -translate-y-1 opacity-0'
+              )}
+            >
               <SearchableSetting
                 title={pickerTitle}
                 description={pickerDescription}
@@ -217,8 +233,8 @@ export function TerminalThemeCatalogSection({
                   }
                 />
               </SearchableSetting>
-            </>
-          )}
+            </div>
+          </div>
         </div>
 
         <TerminalSettingsPreview

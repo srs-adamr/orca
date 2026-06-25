@@ -119,6 +119,33 @@ function findElementByTypeName(node: unknown, typeName: string): ReactElementLik
   return findElementByTypeName(element.props?.children, typeName)
 }
 
+function findElementByClassSubstring(
+  node: unknown,
+  classNameSubstring: string
+): ReactElementLike | null {
+  if (node == null || typeof node === 'string' || typeof node === 'number') {
+    return null
+  }
+  if (Array.isArray(node)) {
+    for (const child of node) {
+      const found = findElementByClassSubstring(child, classNameSubstring)
+      if (found) {
+        return found
+      }
+    }
+    return null
+  }
+
+  const element = node as ReactElementLike
+  if (
+    typeof element.props?.className === 'string' &&
+    element.props.className.includes(classNameSubstring)
+  ) {
+    return element
+  }
+  return findElementByClassSubstring(element.props?.children, classNameSubstring)
+}
+
 function findButtonTexts(node: unknown): string[] {
   if (node == null || typeof node === 'string' || typeof node === 'number') {
     return []
@@ -242,7 +269,7 @@ describe('TerminalThemeCatalogSection', () => {
     expect(updateSettings).toHaveBeenCalledWith({ terminalUseSeparateLightTheme: false })
   })
 
-  it('shows the match dark mode switch and light preview while customization is hidden', () => {
+  it('collapses light customization with a transition while matching dark mode', () => {
     const element = renderCatalog(
       makeSettings({ terminalUseSeparateLightTheme: false }),
       vi.fn(),
@@ -250,10 +277,17 @@ describe('TerminalThemeCatalogSection', () => {
     )
     const preview = findElementByTypeName(element, 'TerminalSettingsPreview')
     const matchDarkModeSwitch = findElementByTypeName(element, 'SettingsSwitchRow')
+    const transitionRegion = findElementByClassSubstring(
+      element,
+      'transition-[grid-template-rows,padding-top]'
+    )
 
     expect(matchDarkModeSwitch?.props?.label).toBe('Match dark mode')
-    expect(countElementsByTypeName(element, 'ThemePicker')).toBe(0)
-    expect(countElementsByTypeName(element, 'ColorField')).toBe(0)
+    expect(transitionRegion?.props?.className).toContain('grid-rows-[0fr]')
+    expect(transitionRegion?.props?.['aria-hidden']).toBe(true)
+    expect(transitionRegion?.props?.inert).toBe(true)
+    expect(countElementsByTypeName(element, 'ThemePicker')).toBe(1)
+    expect(countElementsByTypeName(element, 'ColorField')).toBe(1)
     expect(preview?.props?.modeOverride).toBe('light')
   })
 
