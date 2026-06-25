@@ -34,6 +34,10 @@ export function publishManagedSkillUpdated(result: ManagedAgentSkillEnsureResult
 
 function publishManagedSkillEvent(event: ManagedSkillEvent): void {
   for (const listener of managedSkillEventListeners) {
-    listener(event)
+    try {
+      listener(event)
+    } catch {
+      // Why: one broken stream subscriber should not interrupt other skill update listeners.
+    }
   }
 }

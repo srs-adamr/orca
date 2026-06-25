@@ -43,10 +43,12 @@ type ManagedSkillCoordinatorDeps = {
 }
 
 const DEFAULT_COOLDOWN_MS = 60_000
-const defaultUpdateAbortController = new AbortController()
+let defaultUpdateAbortController = new AbortController()
 
 export function abortManagedSkillUpdateProcesses(): void {
   defaultUpdateAbortController.abort()
+  // Why: AbortSignal is one-shot; future coordinators need a fresh shutdown signal.
+  defaultUpdateAbortController = new AbortController()
 }
 
 export class ManagedSkillUpdateCoordinator {

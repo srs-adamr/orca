@@ -41,6 +41,10 @@ async function runManagedSkillUpdate(
   cwd: string,
   signal: AbortSignal | undefined
 ): Promise<ManagedSkillUpdateRunnerResult> {
+  if (signal?.aborted) {
+    return { status: 'failure', error: 'aborted' }
+  }
+
   const command = buildManagedSkillUpdateCommand(skillName)
   return new Promise((resolve) => {
     let settled = false
@@ -73,10 +77,6 @@ async function runManagedSkillUpdate(
       killChildTree()
       finish({ status: 'timeout' })
     }, timeoutMs)
-    if (signal?.aborted) {
-      onAbort()
-      return
-    }
     signal?.addEventListener('abort', onAbort, { once: true })
 
     child.once('error', (error) => {

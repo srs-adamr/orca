@@ -1,8 +1,14 @@
 import { EventEmitter } from 'node:events'
 import { spawn } from 'node:child_process'
+import { join, sep } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ORCHESTRATION_SKILL_NAME } from '../../shared/agent-feature-install-commands'
+import { homeDiscovery, lockfile, orchestrationRequest } from './managed-skill-test-fixtures'
 import { createManagedSkillUpdateRunner } from './managed-skill-update-runner'
+import {
+  abortManagedSkillUpdateProcesses,
+  ManagedSkillUpdateCoordinator
+} from './managed-skill-updates'
 
 vi.mock('node:child_process', () => ({
   spawn: vi.fn()
@@ -16,6 +22,8 @@ class FakeChildProcess extends EventEmitter {
     super()
   }
 }
+
+const TEST_ALICE_HOME = join(sep, 'home', 'alice')
 
 describe('createManagedSkillUpdateRunner', () => {
   afterEach(() => {
@@ -49,10 +57,22 @@ describe('createManagedSkillUpdateRunner', () => {
     expect(child.kill).toHaveBeenCalledTimes(1)
   })
 
+  it('does not spawn when the shutdown signal already aborted', async () => {
+    const controller = new AbortController()
+    controller.abort()
+    const runner = createManagedSkillUpdateRunner({ signal: controller.signal, timeoutMs: 1_000 })
+
+    await expect(runner(ORCHESTRATION_SKILL_NAME)).resolves.toEqual({
+      status: 'failure',
+      error: 'aborted'
+    })
+    expect(spawn).not.toHaveBeenCalled()
+  })
+
   it('spawns the single-skill global update command without a shell from a neutral cwd', async () => {
     const child = new FakeChildProcess()
     vi.mocked(spawn).mockReturnValue(child as never)
-    const runner = createManagedSkillUpdateRunner({ cwd: '/home/alice', timeoutMs: 1_000 })
+    const runner = createManagedSkillUpdateRunner({ cwd: TEST_ALICE_HOME, timeoutMs: 1_000 })
 
     const resultPromise = runner(ORCHESTRATION_SKILL_NAME)
     child.emit('close', 0)
@@ -62,7 +82,7 @@ describe('createManagedSkillUpdateRunner', () => {
       'npx',
       ['--yes', 'skills', 'update', 'orchestration', '--global', '--yes'],
       {
-        cwd: '/home/alice',
+        cwd: TEST_ALICE_HOME,
         shell: false,
         stdio: 'ignore',
         windowsHide: true
@@ -92,5 +112,26 @@ describe('createManagedSkillUpdateRunner', () => {
     )
     expect(killer.unref).toHaveBeenCalledTimes(1)
     platform.mockRestore()
+  })
+
+  it('allows future default coordinators to update after aborting current update processes', async () => {
+    const child = new FakeChildProcess()
+    vi.mocked(spawn).mockReturnValue(child as never)
+    abortManagedSkillUpdateProcesses()
+    const coordinator = new ManagedSkillUpdateCoordinator({
+      backgroundUpdatesEnabled: () => true,
+      discoverHostSkills: async () => homeDiscovery(),
+      readTextFile: async () => lockfile(ORCHESTRATION_SKILL_NAME, 'same-hash')
+    })
+
+    const resultPromise = coordinator.ensureManagedReady(orchestrationRequest)
+    await vi.waitFor(() => expect(spawn).toHaveBeenCalled())
+    child.emit('close', 0)
+
+    await expect(resultPromise).resolves.toMatchObject({
+      status: 'ready',
+      skillName: ORCHESTRATION_SKILL_NAME,
+      context: 'agent-orchestration'
+    })
   })
 })

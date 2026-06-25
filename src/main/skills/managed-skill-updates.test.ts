@@ -1,6 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import { ORCHESTRATION_SKILL_NAME } from '../../shared/agent-feature-install-commands'
-import { homeDiscovery, lockfile, orchestrationRequest } from './managed-skill-test-fixtures'
+import {
+  TEST_OTHER_WORKSPACE_ROOT,
+  homeDiscovery,
+  lockfile,
+  orchestrationRequest
+} from './managed-skill-test-fixtures'
 import { ManagedSkillUpdateCoordinator } from './managed-skill-updates'
 
 describe('ManagedSkillUpdateCoordinator', () => {
@@ -113,7 +118,7 @@ describe('ManagedSkillUpdateCoordinator', () => {
     const first = await coordinator.ensureManagedReady(orchestrationRequest)
     const second = await coordinator.ensureManagedReady({
       ...orchestrationRequest,
-      discoveryTarget: { runtime: 'host', projectRootPath: '/workspace/other' }
+      discoveryTarget: { runtime: 'host', projectRootPath: TEST_OTHER_WORKSPACE_ROOT }
     })
 
     expect(first.status).toBe('updated')

@@ -3,6 +3,7 @@ import { RpcDispatcher } from '../dispatcher'
 import type { RpcRequest, RpcResponse } from '../core'
 import { SKILL_METHODS } from './skills'
 import {
+  onManagedSkillEvent,
   publishManagedSkillFallback,
   publishManagedSkillUpdated
 } from '../../../skills/managed-skill-events'
@@ -128,5 +129,35 @@ describe('skills runtime RPC methods', () => {
       streaming: true,
       result: { type: 'end' }
     })
+  })
+
+  it('continues publishing managed skill events when one listener throws', () => {
+    const received: unknown[] = []
+    const unsubscribeThrowing = onManagedSkillEvent(() => {
+      throw new Error('listener failed')
+    })
+    const unsubscribeReceiving = onManagedSkillEvent((event) => {
+      received.push(event)
+    })
+    const fallbackEvent = {
+      status: 'fallback',
+      skillName: 'orca-linear',
+      context: 'linear-worktree',
+      runtime: 'host',
+      scope: 'missing',
+      reason: 'missing-install',
+      uiKey: 'host::orca-linear:linear-worktree',
+      message: 'Install orca-linear.',
+      request: { skillName: 'orca-linear', context: 'linear-worktree' }
+    } satisfies ManagedAgentSkillFallback
+
+    try {
+      publishManagedSkillFallback(fallbackEvent)
+    } finally {
+      unsubscribeThrowing()
+      unsubscribeReceiving()
+    }
+
+    expect(received).toEqual([{ type: 'fallback', event: fallbackEvent }])
   })
 })

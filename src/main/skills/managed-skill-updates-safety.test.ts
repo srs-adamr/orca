@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { join } from 'node:path'
 import {
   ORCA_LINEAR_SKILL_NAME,
   ORCHESTRATION_SKILL_NAME
@@ -6,6 +7,10 @@ import {
 import type { ManagedAgentSkillEnsureRequest, ManagedAgentSkillName } from '../../shared/skills'
 import {
   TEST_MANAGED_HOME_ROOT,
+  TEST_ALICE_HOME,
+  TEST_CENTRAL_SKILLS_ROOT,
+  TEST_OTHER_WORKSPACE_ROOT,
+  TEST_WORKSPACE_AGENT_SKILLS_ROOT,
   discoveredSkill,
   discovery,
   homeDiscovery,
@@ -24,8 +29,8 @@ describe('ManagedSkillUpdateCoordinator safety cases', () => {
           discoveredSkill({
             name: ORCHESTRATION_SKILL_NAME,
             sourceKind: 'repo',
-            rootPath: '/workspace/current/.agents/skills',
-            directoryPath: '/workspace/current/.agents/skills/orchestration'
+            rootPath: TEST_WORKSPACE_AGENT_SKILLS_ROOT,
+            directoryPath: join(TEST_WORKSPACE_AGENT_SKILLS_ROOT, 'orchestration')
           })
         ],
         reason: 'project-install'
@@ -36,8 +41,8 @@ describe('ManagedSkillUpdateCoordinator safety cases', () => {
           discoveredSkill({
             name: ORCHESTRATION_SKILL_NAME,
             sourceKind: 'repo',
-            rootPath: '/workspace/current/.agents/skills',
-            directoryPath: '/workspace/current/.agents/skills/orchestration'
+            rootPath: TEST_WORKSPACE_AGENT_SKILLS_ROOT,
+            directoryPath: join(TEST_WORKSPACE_AGENT_SKILLS_ROOT, 'orchestration')
           })
         ],
         reason: 'ambiguous-install'
@@ -65,10 +70,10 @@ describe('ManagedSkillUpdateCoordinator safety cases', () => {
           discoveredSkill({
             name: ORCHESTRATION_SKILL_NAME,
             sourceKind: 'home',
-            directoryPath: '/home/alice/.agents/skills/orchestration',
-            realDirectoryPath: '/mnt/central/skills/orchestration',
-            skillFilePath: '/home/alice/.agents/skills/orchestration/SKILL.md',
-            realSkillFilePath: '/mnt/central/skills/orchestration/SKILL.md'
+            directoryPath: join(TEST_ALICE_HOME, '.agents', 'skills', 'orchestration'),
+            realDirectoryPath: join(TEST_CENTRAL_SKILLS_ROOT, 'orchestration'),
+            skillFilePath: join(TEST_ALICE_HOME, '.agents', 'skills', 'orchestration', 'SKILL.md'),
+            realSkillFilePath: join(TEST_CENTRAL_SKILLS_ROOT, 'orchestration', 'SKILL.md')
           })
         ],
         reason: 'symlinked-global-install'
@@ -91,15 +96,15 @@ describe('ManagedSkillUpdateCoordinator safety cases', () => {
   it('does not treat Codex or Claude home skills as managed global installs', async () => {
     const updateRunner = vi.fn(async () => ({ status: 'success' as const }))
     const coordinator = new ManagedSkillUpdateCoordinator({
-      homeDir: () => '/home/alice',
+      homeDir: () => TEST_ALICE_HOME,
       discoverHostSkills: async () =>
         discovery([
           discoveredSkill({
             name: ORCHESTRATION_SKILL_NAME,
             sourceKind: 'home',
             providers: ['codex'],
-            rootPath: '/home/alice/.codex/skills',
-            directoryPath: '/home/alice/.codex/skills/orchestration'
+            rootPath: join(TEST_ALICE_HOME, '.codex', 'skills'),
+            directoryPath: join(TEST_ALICE_HOME, '.codex', 'skills', 'orchestration')
           })
         ]),
       readTextFile: async () => lockfile(ORCHESTRATION_SKILL_NAME, 'old-hash'),
@@ -124,8 +129,8 @@ describe('ManagedSkillUpdateCoordinator safety cases', () => {
         discoveredSkill({
           name: ORCHESTRATION_SKILL_NAME,
           sourceKind: 'repo',
-          rootPath: '/workspace/current/.agents/skills',
-          directoryPath: '/workspace/current/.agents/skills/orchestration'
+          rootPath: TEST_WORKSPACE_AGENT_SKILLS_ROOT,
+          directoryPath: join(TEST_WORKSPACE_AGENT_SKILLS_ROOT, 'orchestration')
         })
       ])
     )
@@ -140,7 +145,7 @@ describe('ManagedSkillUpdateCoordinator safety cases', () => {
       coordinator.ensureManagedReady(orchestrationRequest),
       coordinator.ensureManagedReady({
         ...orchestrationRequest,
-        discoveryTarget: { runtime: 'host', projectRootPath: '/workspace/other' }
+        discoveryTarget: { runtime: 'host', projectRootPath: TEST_OTHER_WORKSPACE_ROOT }
       })
     ])
 
