@@ -9,6 +9,7 @@ import {
   KnownRuntimeEnvironmentSchema,
   RuntimeEnvironmentStoreSchema,
   type KnownRuntimeEnvironment,
+  type RuntimeEnvironmentSource,
   type RuntimeEnvironmentStore
 } from './runtime-environments'
 
@@ -36,7 +37,7 @@ export function listEnvironments(userDataPath: string): KnownRuntimeEnvironment[
 
 export function addEnvironmentFromPairingCode(
   userDataPath: string,
-  args: { name: string; pairingCode: string; now?: number }
+  args: { name: string; pairingCode: string; now?: number; source?: RuntimeEnvironmentSource }
 ): KnownRuntimeEnvironment {
   const offer = parsePairingCode(args.pairingCode)
   if (!offer) {
@@ -59,7 +60,8 @@ export function addEnvironmentFromPairingCode(
     name: args.name,
     now,
     offer,
-    runtimeId: null
+    runtimeId: null,
+    ...(args.source ? { source: args.source } : {})
   })
   const next = {
     version: 1 as const,

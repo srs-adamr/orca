@@ -13,7 +13,8 @@ const mocks = vi.hoisted(() => ({
     settings: { activeRuntimeEnvironmentId: null as string | null },
     switchRuntimeEnvironment: vi.fn(),
     setSshConnectionState: vi.fn(),
-    sshConnectionStates: new Map()
+    sshConnectionStates: new Map(),
+    runtimeEnvironments: [] as { id: string; name: string; source?: 'manual' | 'ephemeral-vm' }[]
   },
   sshConnect: vi.fn(),
   sshGetState: vi.fn()
@@ -24,6 +25,7 @@ vi.mock('react', async (importOriginal) => {
   return {
     ...actual,
     useCallback: <T extends (...args: never[]) => unknown>(fn: T) => fn,
+    useMemo: <T>(factory: () => T) => factory(),
     useEffect: (effect: () => void | (() => void)) => {
       effect()
     },
@@ -98,6 +100,7 @@ describe('useAddRepoHostSelection', () => {
     mocks.storeState.settings = { activeRuntimeEnvironmentId: null }
     mocks.storeState.switchRuntimeEnvironment.mockResolvedValue(true)
     mocks.storeState.sshConnectionStates = new Map()
+    mocks.storeState.runtimeEnvironments = []
     mocks.sshConnect.mockReset()
     mocks.sshGetState.mockReset()
     vi.stubGlobal('window', {
@@ -223,5 +226,30 @@ describe('useAddRepoHostSelection', () => {
     useAddRepoHostSelection({ isOpen: true, setStep: vi.fn() })
 
     expect(mocks.stateSetters[0]).toHaveBeenCalledWith('local')
+  })
+
+  it('hides ephemeral VM runtime hosts from Add Project selection', async () => {
+    mocks.stateValues = ['runtime:env-vm', false]
+    mocks.hostOptions.push({
+      id: 'runtime:env-vm',
+      label: 'orca VM abc12345',
+      detail: 'Runtime',
+      kind: 'runtime',
+      health: 'available',
+      presence: 'project'
+    })
+    mocks.storeState.runtimeEnvironments = [
+      { id: 'env-vm', name: 'orca VM abc12345', source: 'ephemeral-vm' }
+    ]
+    const setStep = vi.fn()
+    const { useAddRepoHostSelection } = await import('./use-add-repo-host-selection')
+
+    const result = useAddRepoHostSelection({ isOpen: true, setStep })
+
+    expect(result.hostOptions.map((host) => host.id)).not.toContain('runtime:env-vm')
+    expect(result.selectedHostId).toBe('local')
+    await result.handleSelectAddProjectHost('runtime:env-vm')
+    expect(mocks.storeState.switchRuntimeEnvironment).not.toHaveBeenCalledWith('env-vm')
+    expect(setStep).not.toHaveBeenCalled()
   })
 })

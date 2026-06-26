@@ -5,6 +5,7 @@ import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { encodePairingOffer } from '../../shared/pairing'
+import { upsertEphemeralVmRuntime } from '../../shared/ephemeral-vm-runtime-store'
 import { REMOTE_RUNTIME_SHARED_CONTROL_CAPABILITY } from '../../shared/protocol-version'
 import * as environmentStore from '../../shared/runtime-environment-store'
 
@@ -197,6 +198,39 @@ describe('registerRuntimeEnvironmentHandlers', () => {
 
     const list = handler<undefined, { id: string; name: string }[]>('runtimeEnvironments:list')
     expect(await list(null, undefined)).toMatchObject([{ id: added.environment.id, name: 'desk' }])
+  })
+
+  it('marks environments owned by ephemeral VM runtimes in the public list', async () => {
+    registerRuntimeEnvironmentHandlers()
+
+    const add = handler<
+      { name: string; pairingCode: string },
+      { environment: { id: string; name: string; source?: string } }
+    >('runtimeEnvironments:addFromPairingCode')
+    const added = await add(null, { name: 'orca VM abc12345', pairingCode: pairingCode() })
+    upsertEphemeralVmRuntime(userDataPath, {
+      id: 'runtime-1',
+      recipeId: 'vercel-sandbox',
+      repoId: 'repo-1',
+      runtimeEnvironmentId: added.environment.id,
+      status: 'running',
+      cleanupStatus: 'not_started',
+      createdAt: 1,
+      updatedAt: 1,
+      recipeResult: {
+        schemaVersion: 1,
+        pairingCode: pairingCode(),
+        projectRoot: '/workspace'
+      }
+    })
+
+    const list = handler<undefined, { id: string; name: string; source?: string }[]>(
+      'runtimeEnvironments:list'
+    )
+
+    expect(await list(null, undefined)).toMatchObject([
+      { id: added.environment.id, name: 'orca VM abc12345', source: 'ephemeral-vm' }
+    ])
   })
 
   it('checks a saved remote runtime and records the runtime id on success', async () => {

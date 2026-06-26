@@ -141,7 +141,8 @@ export function registerEphemeralVmHandlers(store: Store): void {
       try {
         environment = addEnvironmentFromPairingCode(app.getPath('userData'), {
           name: buildEphemeralEnvironmentName(repo.repo.displayName, result.runtime.id),
-          pairingCode: result.start.result.pairingCode
+          pairingCode: result.start.result.pairingCode,
+          source: 'ephemeral-vm'
         })
       } catch (error) {
         await cleanupEphemeralVmRuntime({

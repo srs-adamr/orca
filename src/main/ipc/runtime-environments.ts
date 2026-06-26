@@ -6,8 +6,10 @@ import {
   removeEnvironment,
   resolveEnvironment
 } from '../../shared/runtime-environment-store'
+import { listEphemeralVmRuntimes } from '../../shared/ephemeral-vm-runtime-store'
 import {
   redactRuntimeEnvironment,
+  type KnownRuntimeEnvironment,
   type PublicKnownRuntimeEnvironment
 } from '../../shared/runtime-environments'
 import type { RuntimeStatus } from '../../shared/runtime-types'
@@ -57,6 +59,21 @@ function closeSubscriptionsForEnvironment(environmentId: string): void {
   }
 }
 
+function listPublicRuntimeEnvironments(): PublicKnownRuntimeEnvironment[] {
+  const userDataPath = getUserDataPath()
+  const ephemeralEnvironmentIds = new Set(
+    listEphemeralVmRuntimes(userDataPath)
+      .map((runtime) => runtime.runtimeEnvironmentId)
+      .filter((id): id is string => Boolean(id))
+  )
+  return listEnvironments(userDataPath).map((environment) => {
+    const enriched: KnownRuntimeEnvironment = ephemeralEnvironmentIds.has(environment.id)
+      ? { ...environment, source: 'ephemeral-vm' }
+      : environment
+    return redactRuntimeEnvironment(enriched)
+  })
+}
+
 export function registerRuntimeEnvironmentHandlers(): void {
   // Why: keep direct re-registration safe even though register-core-handlers
   // normally guards this path; otherwise the binary send listener can stack.
@@ -67,7 +84,7 @@ export function registerRuntimeEnvironmentHandlers(): void {
   ipcMain.removeAllListeners('runtimeEnvironments:subscriptionBinary')
 
   ipcMain.handle('runtimeEnvironments:list', (): PublicKnownRuntimeEnvironment[] =>
-    listEnvironments(getUserDataPath()).map(redactRuntimeEnvironment)
+    listPublicRuntimeEnvironments()
   )
   ipcMain.handle(
     'runtimeEnvironments:addFromPairingCode',

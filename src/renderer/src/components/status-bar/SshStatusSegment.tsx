@@ -13,6 +13,7 @@ import type { SshConnectionStatus } from '../../../../shared/ssh-types'
 import { translate } from '@/i18n/i18n'
 import { getHostDisplayLabelOverrides } from '../../../../shared/host-setting-overrides'
 import { toRuntimeExecutionHostId } from '../../../../shared/execution-host'
+import { isUserManagedRuntimeEnvironment } from '../../../../shared/runtime-environments'
 import { RuntimeHostStatusRow, type RuntimeHostConnectionState } from './RuntimeHostStatusRow'
 import { SshTargetStatusRow } from './SshTargetStatusRow'
 import type { RemoteRuntimeSharedConnectionDiagnostics } from '../../../../shared/remote-runtime-shared-control-types'
@@ -176,18 +177,20 @@ export function SshStatusSegment({
       syncStatus: remoteWorkspaceSyncStatusByTargetId[id]
     }
   })
-  const runtimeHosts = runtimeEnvironments.map((environment) => {
-    const statusEntry = runtimeStatusByEnvironmentId.get(environment.id)
-    const override = hostLabelOverrides.get(toRuntimeExecutionHostId(environment.id))
-    return {
-      id: environment.id,
-      label: override || environment.name || environment.id,
-      hasStatus: Boolean(statusEntry),
-      online: Boolean(statusEntry?.status),
-      active: settings?.activeRuntimeEnvironmentId === environment.id,
-      remoteControl: statusEntry?.status?.remoteControl ?? null
-    }
-  })
+  const runtimeHosts = runtimeEnvironments
+    .filter(isUserManagedRuntimeEnvironment)
+    .map((environment) => {
+      const statusEntry = runtimeStatusByEnvironmentId.get(environment.id)
+      const override = hostLabelOverrides.get(toRuntimeExecutionHostId(environment.id))
+      return {
+        id: environment.id,
+        label: override || environment.name || environment.id,
+        hasStatus: Boolean(statusEntry),
+        online: Boolean(statusEntry?.status),
+        active: settings?.activeRuntimeEnvironmentId === environment.id,
+        remoteControl: statusEntry?.status?.remoteControl ?? null
+      }
+    })
   const runtimeHostRows = runtimeHosts.map((host) => ({
     ...host,
     state: runtimeHostConnectionState(host)

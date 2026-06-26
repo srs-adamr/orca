@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useAppStore } from '@/store'
 import { toast } from 'sonner'
 import {
@@ -8,6 +8,7 @@ import {
   type ExecutionHostId
 } from '../../../../shared/execution-host'
 import type { SshConnectionState } from '../../../../shared/ssh-types'
+import { isEphemeralVmRuntimeEnvironment } from '../../../../shared/runtime-environments'
 import type { AddRepoDialogStep } from './add-repo-dialog-types'
 import { useSidebarHostScopeOptions } from './use-sidebar-host-scope-options'
 import { canSelectAddRepoHost } from './add-repo-host-availability'
@@ -33,19 +34,41 @@ export function useAddRepoHostSelection({
   const switchRuntimeEnvironment = useAppStore((s) => s.switchRuntimeEnvironment)
   const setSshConnectionState = useAppStore((s) => s.setSshConnectionState)
   const sshConnectionStates = useAppStore((s) => s.sshConnectionStates)
+  const runtimeEnvironments = useAppStore((s) => s.runtimeEnvironments)
   const { hostOptions } = useSidebarHostScopeOptions()
+  const ephemeralRuntimeEnvironmentIds = useMemo(
+    () =>
+      new Set(
+        runtimeEnvironments
+          .filter(isEphemeralVmRuntimeEnvironment)
+          .map((environment) => environment.id)
+      ),
+    [runtimeEnvironments]
+  )
+  const selectableHostOptions = useMemo(
+    () =>
+      hostOptions.filter((host) => {
+        const parsed = parseExecutionHostId(host.id)
+        return (
+          parsed?.kind !== 'runtime' || !ephemeralRuntimeEnvironmentIds.has(parsed.environmentId)
+        )
+      }),
+    [ephemeralRuntimeEnvironmentIds, hostOptions]
+  )
   const [selectedAddProjectHostId, setSelectedAddProjectHostId] =
     useState<ExecutionHostId>(LOCAL_EXECUTION_HOST_ID)
   const [hostSelectorOpen, setHostSelectorOpen] = useState(false)
   const previousOpenRef = useRef(false)
 
   const selectedHost =
-    hostOptions.find(
+    selectableHostOptions.find(
       (host) => host.id === selectedAddProjectHostId && canSelectAddRepoHost(host)
     ) ??
-    hostOptions.find((host) => host.id === LOCAL_EXECUTION_HOST_ID && canSelectAddRepoHost(host)) ??
-    hostOptions.find((host) => canSelectAddRepoHost(host)) ??
-    hostOptions[0]
+    selectableHostOptions.find(
+      (host) => host.id === LOCAL_EXECUTION_HOST_ID && canSelectAddRepoHost(host)
+    ) ??
+    selectableHostOptions.find((host) => canSelectAddRepoHost(host)) ??
+    selectableHostOptions[0]
   const selectedHostId = selectedHost?.id ?? LOCAL_EXECUTION_HOST_ID
   const selectedParsedHost = parseExecutionHostId(selectedHostId)
   const selectedSshTargetId =
@@ -54,7 +77,7 @@ export function useAddRepoHostSelection({
   useEffect(() => {
     if (isOpen && !previousOpenRef.current) {
       const focusedHostId = getSettingsFocusedExecutionHostId(settings)
-      const nextHostId = hostOptions.some(
+      const nextHostId = selectableHostOptions.some(
         (host) => host.id === focusedHostId && canSelectAddRepoHost(host)
       )
         ? focusedHostId
@@ -65,11 +88,11 @@ export function useAddRepoHostSelection({
       setHostSelectorOpen(false)
     }
     previousOpenRef.current = isOpen
-  }, [hostOptions, isOpen, settings])
+  }, [isOpen, selectableHostOptions, settings])
 
   const handleSelectAddProjectHost = useCallback(
     async (hostId: ExecutionHostId): Promise<void> => {
-      const host = hostOptions.find((candidate) => candidate.id === hostId)
+      const host = selectableHostOptions.find((candidate) => candidate.id === hostId)
       if (!host || !canSelectAddRepoHost(host)) {
         return
       }
@@ -88,12 +111,12 @@ export function useAddRepoHostSelection({
       setSelectedAddProjectHostId(hostId)
       setStep('add')
     },
-    [hostOptions, settings?.activeRuntimeEnvironmentId, setStep, switchRuntimeEnvironment]
+    [selectableHostOptions, settings?.activeRuntimeEnvironmentId, setStep, switchRuntimeEnvironment]
   )
 
   const handleConnectAddProjectHost = useCallback(
     async (hostId: ExecutionHostId): Promise<void> => {
-      const host = hostOptions.find((candidate) => candidate.id === hostId)
+      const host = selectableHostOptions.find((candidate) => candidate.id === hostId)
       const parsed = parseExecutionHostId(hostId)
       if (!host || parsed?.kind !== 'ssh') {
         return
@@ -161,7 +184,7 @@ export function useAddRepoHostSelection({
       }
     },
     [
-      hostOptions,
+      selectableHostOptions,
       settings?.activeRuntimeEnvironmentId,
       setSshConnectionState,
       setStep,
@@ -171,7 +194,7 @@ export function useAddRepoHostSelection({
   )
 
   return {
-    hostOptions,
+    hostOptions: selectableHostOptions,
     selectedHostId,
     selectedParsedHost,
     selectedSshTargetId,
