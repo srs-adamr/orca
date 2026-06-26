@@ -57,7 +57,7 @@ describe('prepareEphemeralVmWorkspaceTarget', () => {
     })
     const setupResult = {
       project: { id: 'project-1' },
-      setup: { id: 'setup-1' },
+      setup: { id: 'setup-1', hostId: 'local' },
       repo: { id: 'repo-runtime' }
     } as ProjectHostSetupResult
     const setupExistingFolder = vi.fn<PrepareEphemeralVmWorkspaceTargetArgs['setupExistingFolder']>(
@@ -86,7 +86,10 @@ describe('prepareEphemeralVmWorkspaceTarget', () => {
     })
     expect(result).toEqual({
       ok: true,
-      setup: setupResult,
+      setup: {
+        ...setupResult,
+        setup: { ...setupResult.setup, hostId: 'runtime:env-1' }
+      },
       runtimeId: 'runtime-1',
       environmentId: 'env-1',
       stderr: 'creating sandbox',

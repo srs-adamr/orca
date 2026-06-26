@@ -86,6 +86,16 @@ export async function prepareEphemeralVmWorkspaceTarget(
       stderr: provisioned.stderr
     }
   }
+  const runtimeHostId = toRuntimeExecutionHostId(provisioned.environment.id)
+  setup = {
+    ...setup,
+    setup: {
+      ...setup.setup,
+      // Why: the sandbox reports its own checkout as "local"; the desktop app
+      // must route follow-up worktree operations back through this runtime.
+      hostId: runtimeHostId
+    }
+  }
 
   return {
     ok: true,
