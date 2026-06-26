@@ -85,6 +85,7 @@ function revealPendingCreation(
     creationId,
     phase,
     status: 'creating',
+    startedAt: Date.now(),
     indeterminate,
     // Why: the creation surface owns the tab strip immediately. Delaying this
     // caused the real workspace tab bar to flash out when the debounce elapsed.

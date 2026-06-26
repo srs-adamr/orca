@@ -103,12 +103,6 @@ export type ProjectProviderIdentity = {
   repo: string
 }
 
-export type GitRemoteIdentity = {
-  canonicalKey: string
-  remoteName: string
-  remoteUrl: string
-}
-
 export type Project = {
   id: string
   displayName: string
@@ -243,7 +237,6 @@ export type Repo = {
    *  default avatar (upstream owner, not the personal fork) and the fork
    *  indicator. Absent = not a fork, or fork status not yet resolved. */
   upstream?: GitHubRepositoryIdentity | null
-  gitRemoteIdentity?: GitRemoteIdentity | null
   addedAt: number
   kind?: RepoKind
   gitUsername?: string

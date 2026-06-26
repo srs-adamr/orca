@@ -39,6 +39,9 @@ export type WorktreeCreationRequest = {
   /** Ephemeral VM runtime provisioned for this create. Used for best-effort
    *  cleanup if Orca fails before the workspace owns the runtime. */
   ephemeralVmRuntimeId?: string
+  /** Runtime environment created from the VM's pairing code. Used to refresh
+   *  live status immediately after the workspace takes ownership. */
+  ephemeralVmRuntimeEnvironmentId?: string
   /** Recipe to provision before creating the worktree. Kept serializable so
    *  retry can rerun the recipe after a failed create. */
   ephemeralVmRecipe?: {

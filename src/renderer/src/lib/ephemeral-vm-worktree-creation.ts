@@ -60,6 +60,7 @@ export async function prepareRequestForCreate(
     repoId: preparedTarget.setup.repo.id,
     ...getEphemeralVmPortableBaseSelection(request),
     ephemeralVmRuntimeId: preparedTarget.runtimeId,
+    ephemeralVmRuntimeEnvironmentId: preparedTarget.environmentId,
     workspaceRunContext: {
       kind: 'workspace-run',
       projectId: preparedTarget.setup.setup.projectId,
@@ -146,6 +147,11 @@ export async function attachEphemeralVmRuntimeToWorkspace(
       runtimeId: request.ephemeralVmRuntimeId,
       workspaceId
     })
+    if (request.ephemeralVmRuntimeEnvironmentId) {
+      void useAppStore
+        .getState()
+        .refreshRuntimeEnvironmentStatus(request.ephemeralVmRuntimeEnvironmentId)
+    }
   } catch (error) {
     console.error('Failed to attach ephemeral VM runtime to workspace:', error)
   }

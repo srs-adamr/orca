@@ -38,7 +38,8 @@ const store = {
   setActiveView: vi.fn(),
   setSidebarOpen: vi.fn(),
   createWorktree: vi.fn(() => new Promise(() => {})),
-  setupProjectExistingFolder: vi.fn()
+  setupProjectExistingFolder: vi.fn(),
+  refreshRuntimeEnvironmentStatus: vi.fn()
 }
 
 vi.mock('@/store', () => ({
@@ -152,6 +153,7 @@ describe('runBackgroundWorktreeCreation', () => {
     store.setSidebarOpen.mockClear()
     store.createWorktree.mockReset().mockImplementation(() => new Promise(() => {}))
     store.setupProjectExistingFolder.mockReset()
+    store.refreshRuntimeEnvironmentStatus.mockReset()
     prepareEphemeralVmWorkspaceTargetMock.mockReset()
     globalThis.window = {
       api: {
@@ -262,6 +264,7 @@ describe('runBackgroundWorktreeCreation', () => {
       runtimeId: 'runtime-1',
       workspaceId: 'repo-runtime::/workspace/repo/worktree'
     })
+    expect(store.refreshRuntimeEnvironmentStatus).toHaveBeenCalledWith('env-1')
     expect(store.removePendingWorktreeCreation).toHaveBeenCalledWith('creation-1', {
       cleanupVm: false
     })
@@ -412,7 +415,7 @@ describe('staged background worktree creation', () => {
     )
   })
 
-  it('replaces the staged request before the create starts', () => {
+  it('replaces the staged request before the create starts', async () => {
     store.updatePendingWorktreeCreation.mockClear()
     store.createWorktree.mockClear()
     store.setActivePendingWorktreeCreation.mockClear()
@@ -430,6 +433,7 @@ describe('staged background worktree creation', () => {
         request
       })
     )
+    await Promise.resolve()
     expect(store.createWorktree).toHaveBeenCalledTimes(1)
     const createCall = store.createWorktree.mock.calls[0] as unknown[] | undefined
     expect(createCall).toBeDefined()
@@ -442,7 +446,7 @@ describe('staged background worktree creation', () => {
     expect(store.setSidebarOpen).toHaveBeenCalledWith(true)
   })
 
-  it('can continue without revealing a staged create after background preflight', () => {
+  it('can continue without revealing a staged create after background preflight', async () => {
     store.updatePendingWorktreeCreation.mockClear()
     store.createWorktree.mockClear()
     store.setActivePendingWorktreeCreation.mockClear()
@@ -462,6 +466,7 @@ describe('staged background worktree creation', () => {
         request
       })
     )
+    await Promise.resolve()
     expect(store.createWorktree).toHaveBeenCalledTimes(1)
     expect(store.setActivePendingWorktreeCreation).not.toHaveBeenCalled()
     expect(store.setActiveView).not.toHaveBeenCalled()
@@ -494,7 +499,9 @@ describe('staged background worktree creation', () => {
       { activateCreatedTabs: false }
     )
     expect(queueNewWorkspaceTerminalFocus).not.toHaveBeenCalled()
-    expect(store.removePendingWorktreeCreation).toHaveBeenCalledWith('creation-1')
+    expect(store.removePendingWorktreeCreation).toHaveBeenCalledWith('creation-1', {
+      cleanupVm: false
+    })
   })
 
   it('toasts a staged create error after the user leaves the creation surface', async () => {
