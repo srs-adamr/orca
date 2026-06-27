@@ -3,10 +3,9 @@ name: ephemeral-vms
 description: >-
   Create, review, debug, or validate Orca ephemeral VM recipes for cloud
   sandboxes and one-workspace remote runtimes. Use when the user wants to set
-  up or fix a repo-local `orca.yaml` `vmRecipes` entry, provider provisioning
-  script, cleanup script, or `orca vm recipe doctor` failure for cloud
-  sandboxes, custom cloud VMs, container-like runtimes, or other ephemeral
-  coding environments.
+  up or fix a repo-local `orca.yaml` `vmRecipes` entry, provider lifecycle
+  scripts, or `orca vm recipe doctor` failure for cloud sandboxes, custom cloud
+  VMs, container-like runtimes, or other ephemeral coding environments.
 ---
 
 # Ephemeral VMs
@@ -24,11 +23,13 @@ A repo can define recipes in `orca.yaml`:
 vmRecipes:
   - id: cloud-sandbox
     name: Cloud Sandbox
-    command: ./scripts/orca-vm/cloud-sandbox.start.sh
-    cleanup: ./scripts/orca-vm/cloud-sandbox.cleanup.sh
+    create: ./scripts/orca-vm/cloud-sandbox-create.sh
+    suspend: ./scripts/orca-vm/cloud-sandbox-suspend.sh
+    resume: ./scripts/orca-vm/cloud-sandbox-resume.sh
+    destroy: ./scripts/orca-vm/cloud-sandbox-destroy.sh
 ```
 
-The `command` runs locally on the user's desktop from the repo root. It must provision the remote
+The `create` script runs locally on the user's desktop from the repo root. It must provision the remote
 environment, ensure the repo exists there, start `orca serve` in that remote environment, then
 print one JSON object to stdout:
 
@@ -52,7 +53,16 @@ Required fields:
 Optional fields:
 
 - `schemaVersion`: use `1`.
-- `userData`: provider metadata needed for cleanup or debugging. Do not put secrets here.
+- `userData`: provider metadata needed for lifecycle hooks or debugging. Do not put secrets here.
+
+Lifecycle hooks:
+
+- `create`: required. Runs locally and prints recipe result JSON.
+- `suspend`: optional. Runs locally when Orca sleeps the workspace. Reads lifecycle payload JSON on stdin.
+- `resume`: optional. Runs locally when Orca wakes the workspace. Reads lifecycle payload JSON on stdin and prints fresh recipe result JSON.
+- `destroy`: optional unless `destroy: none`. Runs locally when Orca deletes/cleans up the runtime. Reads lifecycle payload JSON on stdin.
+
+Backward compatibility exists for old recipes: `command` maps to `create`, `cleanup` maps to `destroy`, and `cleanup: none` maps to `destroy: none`. Prefer the lifecycle field names for new work.
 
 ## Workflow
 
@@ -64,15 +74,14 @@ Optional fields:
 5. Keep scripts portable: prefer `#!/usr/bin/env bash` only when bash is required, quote paths,
    fail fast with clear stderr, and keep stdout reserved for the final JSON object.
 6. Run `orca vm recipe doctor <recipe-id> --repo-path <repo>` for non-destructive validation.
-7. If the user explicitly wants a live provision test, run `orca vm recipe doctor <recipe-id>
-   --repo-path <repo> --provision` and verify cleanup behavior.
+7. If the user explicitly wants a live test, create a workspace through Orca's `Run on -> Ephemeral VM` picker, then verify sleep, wake, and delete invoke the expected provider lifecycle.
 
 Do not create an Orca workspace unless the user explicitly asks. Do not commit changes unless the
 user asks.
 
-## Start Script Pattern
+## Create Script Pattern
 
-The start script owns provider-specific setup. The exact provider commands vary, but the shape
+The create script owns provider-specific setup. The exact provider commands vary, but the shape
 should be:
 
 ```bash
@@ -83,7 +92,7 @@ repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 recipe_id="${ORCA_VM_RECIPE_ID:-cloud-sandbox}"
 instance_id="${ORCA_VM_INSTANCE_ID:-manual}"
 
-# 1. Create or locate the provider sandbox.
+# 1. Create or locate the provider runtime.
 # 2. Ensure the repo exists on the remote VM.
 # 3. Ensure Orca is installed on the remote VM.
 # 4. Start orca serve remotely with recipe JSON output.
@@ -100,11 +109,11 @@ If the provider exposes the server through a public URL, ensure the pairing code
 `orca serve` points at the externally reachable address. Provider-specific tunneling or port
 mapping belongs in the user's script.
 
-## Cleanup Script Pattern
+## Lifecycle Payload Pattern
 
-If cleanup is supported, Orca passes a JSON payload on stdin. Read it, extract `userData`, and
-destroy the provider resource. If cleanup is intentionally manual, set `cleanup: none` in
-`orca.yaml`.
+For `suspend`, `resume`, and `destroy`, Orca passes a JSON payload on stdin. Read it, extract
+`recipeResult.userData`, and call the provider lifecycle action. If destruction is intentionally
+manual, set `destroy: none` in `orca.yaml`.
 
 ```bash
 #!/usr/bin/env bash
@@ -117,23 +126,30 @@ resource_id="$(node -e '
 ' "$payload")"
 
 if [ -z "$resource_id" ]; then
-  echo "No resource id found in cleanup payload" >&2
+  echo "No resource id found in lifecycle payload" >&2
   exit 1
 fi
 
-# provider-cli delete "$resource_id"
+# case "$ORCA_VM_MODE" in
+#   suspend) provider-cli suspend "$resource_id" ;;
+#   resume) provider-cli resume "$resource_id"; print_recipe_result_json ;;
+#   destroy) provider-cli delete "$resource_id" ;;
+# esac
 ```
+
+`resume` must print a fresh recipe result JSON object to stdout because the runtime endpoint or pairing data may change after waking.
 
 ## Validation Checklist
 
 - `orca.yaml` parses and contains the recipe id.
-- `command` is repo-relative and executable where needed.
-- The start command prints valid recipe JSON on stdout.
+- `create`, `suspend`, `resume`, and `destroy` commands are repo-relative and executable where needed.
+- The create command prints valid recipe JSON on stdout.
+- The resume command prints valid recipe JSON on stdout when `resume` is configured.
 - Logs, progress, and provider errors go to stderr.
 - `pairingCode` is present and not logged elsewhere.
 - `projectRoot` is an absolute path on the remote VM and points to the repo.
 - Provider credentials come from the user's environment or provider CLI auth, not checked-in files.
-- Cleanup is either implemented and tested or explicitly set to `none`.
+- Destroy is either implemented and tested or explicitly set to `none`.
 
 ## Boundaries
 

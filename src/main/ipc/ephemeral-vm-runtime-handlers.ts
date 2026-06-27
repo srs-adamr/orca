@@ -142,6 +142,9 @@ export function registerEphemeralVmRuntimeHandlers(store: Store): void {
       if (!runtime?.repoId) {
         return null
       }
+      if (runtime.status !== 'suspended' && runtime.status !== 'resume_failed') {
+        return runtime
+      }
       const recipeContext = getRuntimeRecipeContext(store, userDataPath, runtime.id)
       const result = await resumeEphemeralVmRuntime({
         userDataPath,

@@ -1,4 +1,4 @@
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -262,6 +262,7 @@ describe('registerEphemeralVmHandlers', () => {
         "const fs = require('fs')",
         "const payload = JSON.parse(fs.readFileSync(0, 'utf8'))",
         'if (payload.mode !== "resume") process.exit(2)',
+        "fs.writeFileSync('resume-mode.txt', payload.mode)",
         'console.log(JSON.stringify({',
         '  schemaVersion: 1,',
         `  pairingCode: ${JSON.stringify(resumedPairingCode)},`,
@@ -292,6 +293,12 @@ describe('registerEphemeralVmHandlers', () => {
       workspaceId: 'workspace-1'
     } as never)
 
+    const runningResume = await handlers.get('ephemeralVm:resumeWorkspace')?.(null, {
+      workspaceId: 'workspace-1'
+    } as never)
+    expect(runningResume).toEqual(expect.objectContaining({ status: 'running' }))
+    expect(existsSync(join(repoPath, 'resume-mode.txt'))).toBe(false)
+
     const suspended = await handlers.get('ephemeralVm:suspendWorkspace')?.(null, {
       workspaceId: 'workspace-1'
     } as never)
@@ -307,6 +314,7 @@ describe('registerEphemeralVmHandlers', () => {
         recipeResult: expect.objectContaining({ projectRoot: '/workspace/resumed' })
       })
     )
+    expect(readFileSync(join(repoPath, 'resume-mode.txt'), 'utf8')).toBe('resume')
     const environment = listEnvironments(userDataPath).find(
       (entry) => entry.id === provisioned.environment.id
     )
