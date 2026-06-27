@@ -12,6 +12,7 @@ import { evaluateRuntimeCompat, type RuntimeCompatVerdict } from './protocol-com
 import { MIN_COMPATIBLE_RUNTIME_SERVER_VERSION, RUNTIME_PROTOCOL_VERSION } from './protocol-version'
 import type { RuntimeStatus } from './runtime-types'
 import type { SshConnectionState, SshConnectionStatus } from './ssh-types'
+import type { RuntimeEnvironmentSource } from './runtime-environments'
 import type { GlobalSettings, Repo } from './types'
 
 export type ExecutionHostHealth =
@@ -36,11 +37,13 @@ export type ExecutionHostRegistryEntry = {
   minCompatibleClientVersion?: number | null
   platform?: NodeJS.Platform | null
   remoteControlState?: RuntimeStatus['remoteControl']
+  source?: RuntimeEnvironmentSource
 }
 
 type RuntimeEnvironmentSummary = {
   id: string
   name?: string | null
+  source?: RuntimeEnvironmentSource
 }
 
 type RuntimeHostStatus = {
@@ -137,13 +140,14 @@ function setHost(
   // (named) registration is authoritative for the label — runtime envs are
   // seeded with a friendly name before the id-labeled status/focus/repo
   // fallbacks run, so keep the existing label on a health-only upgrade.
-  hosts.set(entry.id, { ...entry, label: existing.label })
+  hosts.set(entry.id, { ...entry, label: existing.label, source: existing.source ?? entry.source })
 }
 
 function addRuntimeHost(
   hosts: Map<ExecutionHostId, ExecutionHostRegistryEntry>,
   environmentId: string,
   label: string,
+  source: RuntimeEnvironmentSource | undefined,
   statusByEnvironmentId: RuntimeStatusByEnvironmentId | undefined
 ): void {
   const hostId = toRuntimeExecutionHostId(environmentId)
@@ -164,7 +168,8 @@ function addRuntimeHost(
     minCompatibleClientVersion:
       status?.minCompatibleRuntimeClientVersion ?? status?.minCompatibleMobileVersion ?? null,
     platform: status?.hostPlatform ?? null,
-    remoteControlState: status?.remoteControl ?? null
+    remoteControlState: status?.remoteControl ?? null,
+    ...(source ? { source } : {})
   })
 }
 
@@ -197,11 +202,18 @@ export function buildExecutionHostRegistry(args: {
       hosts,
       environmentId,
       normalizeHostPart(environment.name) ?? environmentId,
+      environment.source,
       args.runtimeStatusByEnvironmentId
     )
   }
   for (const environmentId of args.runtimeStatusByEnvironmentId?.keys() ?? []) {
-    addRuntimeHost(hosts, environmentId, environmentId, args.runtimeStatusByEnvironmentId)
+    addRuntimeHost(
+      hosts,
+      environmentId,
+      environmentId,
+      undefined,
+      args.runtimeStatusByEnvironmentId
+    )
   }
 
   const focusedHost = getSettingsFocusedExecutionHostId(args.settings)
@@ -211,6 +223,7 @@ export function buildExecutionHostRegistry(args: {
       hosts,
       parsedFocusedHost.environmentId,
       parsedFocusedHost.environmentId,
+      undefined,
       args.runtimeStatusByEnvironmentId
     )
   }
@@ -223,6 +236,7 @@ export function buildExecutionHostRegistry(args: {
         hosts,
         parsedHost.environmentId,
         parsedHost.environmentId,
+        undefined,
         args.runtimeStatusByEnvironmentId
       )
     }

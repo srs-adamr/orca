@@ -4,6 +4,7 @@ import {
   type ExecutionHostId
 } from '../../../shared/execution-host'
 import type { ExecutionHostRegistryEntry } from '../../../shared/execution-host-registry'
+import { isEphemeralVmRuntimeEnvironment } from '../../../shared/runtime-environments'
 import {
   PROJECT_HOST_SETUP_RUNTIME_CAPABILITY,
   WORKSPACE_RUN_CONTEXT_RUNTIME_CAPABILITY
@@ -107,21 +108,24 @@ function buildReadySetupOptions({
   hosts
 }: BuildReadySetupOptionsInput): ReadyProjectHostSetupOption[] {
   const eligibleRepoIds = new Set(eligibleRepos.map((repo) => repo.id))
-  const hostLabelById = new Map(hosts.map((host) => [host.id, host.label]))
+  const hostById = new Map(hosts.map((host) => [host.id, host]))
   return projectHostSetups
-    .filter(
-      (setup) =>
+    .filter((setup) => {
+      const host = hostById.get(setup.hostId)
+      return (
         setup.projectId === projectId &&
         setup.setupState === 'ready' &&
-        eligibleRepoIds.has(setup.repoId)
-    )
+        eligibleRepoIds.has(setup.repoId) &&
+        !isEphemeralVmProjectHost(host)
+      )
+    })
     .map((setup) => ({
       id: setup.id,
       kind: 'ready' as const,
       projectId: setup.projectId,
       hostId: setup.hostId,
       repoId: setup.repoId,
-      label: hostLabelById.get(setup.hostId) || getExecutionHostLabel(setup.hostId),
+      label: hostById.get(setup.hostId)?.label || getExecutionHostLabel(setup.hostId),
       detail: setup.displayName,
       path: setup.path
     }))
@@ -134,7 +138,7 @@ function buildNeedsSetupOptions({
   pendingSetupByHost
 }: BuildNeedsSetupOptionsInput): NeedsSetupProjectHostOption[] {
   return hosts
-    .filter((host) => !readySetupByHost.has(host.id))
+    .filter((host) => !readySetupByHost.has(host.id) && !isEphemeralVmProjectHost(host))
     .map((host) => {
       const pendingSetup = pendingSetupByHost.get(host.id)
       const availability = getHostSetupAvailability(host)
@@ -152,6 +156,10 @@ function buildNeedsSetupOptions({
         isAvailable: availability.isAvailable
       }
     })
+}
+
+function isEphemeralVmProjectHost(host: ExecutionHostRegistryEntry | undefined): boolean {
+  return host?.kind === 'runtime' && isEphemeralVmRuntimeEnvironment(host)
 }
 
 function getHostSetupAvailability(host: ExecutionHostRegistryEntry): {

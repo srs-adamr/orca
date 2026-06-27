@@ -107,6 +107,33 @@ describe('buildProjectHostSetupOptions', () => {
     ])
   })
 
+  it('omits ephemeral VM runtime setups from reusable project host choices', () => {
+    const ephemeralHostId = 'runtime:90d880b2-de1b-44be-b7b8-8e15274e184e' as ExecutionHostId
+    const options = buildProjectHostSetupOptions({
+      projectId: 'project-1',
+      eligibleRepos: [repo('local-repo'), repo('vm-repo')],
+      hosts: [
+        host('local'),
+        host(ephemeralHostId, {
+          label: '90d880b2-de1b-44be-b7b8-8e15274e184e',
+          source: 'ephemeral-vm',
+          capabilities: FULL_HOST_MODEL_RUNTIME_CAPABILITIES
+        })
+      ],
+      projectHostSetups: [
+        setup('local', 'project-1', 'local', 'local-repo'),
+        setup('vm', 'project-1', ephemeralHostId, 'vm-repo', {
+          path: '/vercel/sandbox/orca',
+          displayName: 'orca'
+        })
+      ]
+    })
+
+    expect(options).toEqual([
+      expect.objectContaining({ id: 'local', kind: 'ready', label: LOCAL_HOST_LABEL })
+    ])
+  })
+
   it('omits setups that are not ready or cannot create through an eligible repo', () => {
     const options = buildProjectHostSetupOptions({
       projectId: 'project-1',
