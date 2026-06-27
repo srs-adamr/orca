@@ -49,4 +49,16 @@ describe('parseMobileMarkdown', () => {
       normalizeMobileMarkdownPreviewHtml('<p>Use <code>&amp;lt;button&amp;gt;</code></p>')
     ).toBe('Use `&lt;button&gt;`')
   })
+
+  it('preserves angle brackets and generics inside fenced and inline code', () => {
+    expect(normalizeMobileMarkdownPreviewHtml('```html\n<div>x</div>\n```')).toBe(
+      '```html\n<div>x</div>\n```'
+    )
+    expect(normalizeMobileMarkdownPreviewHtml('```ts\nconst x: Array<string> = []\n```')).toBe(
+      '```ts\nconst x: Array<string> = []\n```'
+    )
+    expect(normalizeMobileMarkdownPreviewHtml('Use `Array<string>` here')).toBe(
+      'Use `Array<string>` here'
+    )
+  })
 })

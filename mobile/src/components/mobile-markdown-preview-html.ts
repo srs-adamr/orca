@@ -74,8 +74,39 @@ function normalizeInlineHtml(value: string): string {
     })
 }
 
+// Why: the HTML cleanup pipeline below strips every `<...>` run and decodes
+// entities. Markdown code (fenced ```...``` and inline `...`) is literal source
+// the user wants verbatim — e.g. `<div>x</div>` or `Array<string>` — so it must
+// not pass through stripTags. Protect those spans with placeholder tokens (no
+// `<`, `>`, or entity text, so the pipeline leaves them untouched) and restore
+// them after. Fenced blocks are matched before inline spans so a fence's
+// backticks can't be misread as inline code.
+const CODE_PLACEHOLDER_PREFIX = 'ORCA_MD_CODE_'
+const CODE_PLACEHOLDER_SUFFIX = ''
+
+function protectMarkdownCode(content: string): { protectedText: string; codeSpans: string[] } {
+  const codeSpans: string[] = []
+  const store = (match: string): string => {
+    const token = `${CODE_PLACEHOLDER_PREFIX}${codeSpans.length}${CODE_PLACEHOLDER_SUFFIX}`
+    codeSpans.push(match)
+    return token
+  }
+  const protectedText = content
+    .replace(/```[\s\S]*?```/g, store)
+    .replace(/`[^`\n]+`/g, store)
+  return { protectedText, codeSpans }
+}
+
+function restoreMarkdownCode(value: string, codeSpans: string[]): string {
+  return value.replace(
+    new RegExp(`${CODE_PLACEHOLDER_PREFIX}(\\d+)${CODE_PLACEHOLDER_SUFFIX}`, 'g'),
+    (_token, index) => codeSpans[Number(index)] ?? _token
+  )
+}
+
 export function normalizeMobileMarkdownPreviewHtml(content: string): string {
-  let next = content.replace(/\r\n?/g, '\n')
+  const { protectedText, codeSpans } = protectMarkdownCode(content.replace(/\r\n?/g, '\n'))
+  let next = protectedText
 
   // Why: repository Markdown often uses small HTML islands for centered README
   // headers and badges. Preview mode should read like Markdown, while Source
@@ -94,5 +125,5 @@ export function normalizeMobileMarkdownPreviewHtml(content: string): string {
   next = normalizeInlineHtml(next)
   next = stripTags(next)
 
-  return restoreEscapedHtmlEntities(next)
+  return restoreMarkdownCode(restoreEscapedHtmlEntities(next), codeSpans)
 }
