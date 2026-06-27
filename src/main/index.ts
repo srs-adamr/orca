@@ -76,6 +76,7 @@ import {
 import { startEventLoopStallProbe } from './startup/event-loop-stall-probe'
 import { isStartupDiagnosticsEnabled, logStartupDiagnostic } from './startup/startup-diagnostics'
 import { ensureWindowsUserDataAclGrant } from './startup/windows-user-data-acl'
+import { shouldQuitWhenAllWindowsClosed } from './startup/window-all-closed-quit-policy'
 import { RateLimitService } from './rate-limits/service'
 import { getInitialClaudeRateLimitTarget } from './rate-limits/claude-rate-limit-target'
 import { getInitialCodexRateLimitTarget } from './rate-limits/codex-rate-limit-target'
@@ -1924,12 +1925,24 @@ app.on('will-quit', (e) => {
 })
 
 app.on('window-all-closed', () => {
+  // Why: headless `orca serve` has no desktop window, and offscreen browser
+  // windows are disposable implementation details. Closing/crashing the last
+  // one must not take down terminal/runtime RPC for the VM workspace.
+  if (isServeMode) {
+    return
+  }
   // Why: on macOS, closing all windows normally keeps the app alive (dock
   // stays active). But when a quit is in progress (Cmd+Q), the window close
   // handler defers to the renderer for buffer capture, which cancels the
   // original quit sequence. Re-trigger quit here so the app actually exits
   // instead of requiring a second Cmd+Q.
-  if (process.platform !== 'darwin' || isQuitting) {
+  if (
+    shouldQuitWhenAllWindowsClosed({
+      platform: process.platform,
+      isQuitting,
+      isServeMode
+    })
+  ) {
     app.quit()
   }
 })
