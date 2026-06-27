@@ -8,11 +8,15 @@ import {
   AlertTriangle,
   Check,
   ChevronDown,
+  ChevronRight,
+  ChevronsUpDown,
+  Cloud,
   CornerDownLeft,
   FolderPlus,
   LoaderCircle,
   PlugZap,
-  Settings2
+  Settings2,
+  Server
 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Command, CommandEmpty, CommandItem, CommandList } from '@/components/ui/command'
@@ -48,10 +52,12 @@ import SmartWorkspaceNameField, {
   type SmartWorkspaceNameSelection
 } from '@/components/new-workspace/SmartWorkspaceNameField'
 import ProjectCombobox from '@/components/new-workspace/ProjectCombobox'
-import ProjectHostSetupCombobox from '@/components/new-workspace/ProjectHostSetupCombobox'
 import type { SetupConfig } from '@/lib/new-workspace'
 import type { NewWorkspaceProjectOption } from '@/lib/new-workspace-project-options'
-import type { ProjectHostSetupOption } from '@/lib/project-host-setup-options'
+import type {
+  ProjectHostSetupOption,
+  ReadyProjectHostSetupOption
+} from '@/lib/project-host-setup-options'
 import type { WorkspaceCreateErrorDisplay } from '@/lib/workspace-create-error-format'
 import type { SshConnectionStatus } from '../../../shared/ssh-types'
 import type { TaskSourceContext } from '../../../shared/task-source-context'
@@ -211,30 +217,60 @@ function getRecipeCleanupLabel(recipe: EphemeralVmRecipeOption): string {
   return translate('auto.components.NewWorkspaceComposerCard.noCleanupConfigured', 'no cleanup')
 }
 
-type EphemeralVmRecipeComboboxProps = {
+type WorkspaceRunTargetComboboxProps = {
+  hostOptions: readonly ReadyProjectHostSetupOption[]
+  hostValue: string | null
+  onHostChange?: (setupId: string) => void
   recipes: EphemeralVmRecipeOption[]
-  value: string | null
-  onValueChange?: (recipeId: string | null) => void
+  recipeValue: string | null
+  onRecipeChange?: (recipeId: string | null) => void
 }
 
-function EphemeralVmRecipeCombobox({
+function WorkspaceRunTargetCombobox({
+  hostOptions,
+  hostValue,
+  onHostChange,
   recipes,
-  value,
-  onValueChange
-}: EphemeralVmRecipeComboboxProps): React.JSX.Element {
+  recipeValue,
+  onRecipeChange
+}: WorkspaceRunTargetComboboxProps): React.JSX.Element {
   const [open, setOpen] = React.useState(false)
-  const selected = recipes.find((recipe) => recipe.id === value) ?? null
-  const existingHostLabel = translate(
-    'auto.components.NewWorkspaceComposerCard.existingHost',
-    'Selected host'
+  const [vmRecipesOpen, setVmRecipesOpen] = React.useState(false)
+  const selectedHost =
+    hostOptions.find((option) => option.id === hostValue) ?? hostOptions[0] ?? null
+  const selectedRecipe = recipes.find((recipe) => recipe.id === recipeValue) ?? null
+  const selectedValue = selectedRecipe
+    ? `recipe:${selectedRecipe.id}`
+    : selectedHost
+      ? `host:${selectedHost.id}`
+      : ''
+  const ephemeralVmLabel = translate(
+    'auto.components.NewWorkspaceComposerCard.ephemeralVm',
+    'Ephemeral VM'
   )
 
-  const handleSelect = React.useCallback(
-    (recipeId: string | null): void => {
-      onValueChange?.(recipeId)
+  const handleHostSelect = React.useCallback(
+    (setupId: string): void => {
+      if (!hostOptions.some((candidate) => candidate.id === setupId)) {
+        return
+      }
+      onHostChange?.(setupId)
+      onRecipeChange?.(null)
       setOpen(false)
     },
-    [onValueChange]
+    [hostOptions, onHostChange, onRecipeChange]
+  )
+
+  const handleRecipeSelect = React.useCallback(
+    (recipeId: string): void => {
+      if (!recipes.some((recipe) => recipe.id === recipeId)) {
+        return
+      }
+      onRecipeChange?.(recipeId)
+      setVmRecipesOpen(false)
+      setOpen(false)
+    },
+    [onRecipeChange, recipes]
   )
 
   return (
@@ -247,63 +283,124 @@ function EphemeralVmRecipeCombobox({
           aria-expanded={open}
           className="h-9 w-full justify-between border-input px-3 text-sm font-normal focus:border-ring focus:ring-[3px] focus:ring-ring/50"
         >
-          <span className="min-w-0 truncate">{selected?.name ?? existingHostLabel}</span>
-          <ChevronDown className="size-3.5 shrink-0 opacity-50" />
+          {selectedRecipe ? (
+            <span className="inline-flex min-w-0 items-center gap-1.5">
+              <Cloud className="size-3.5 shrink-0 text-muted-foreground" />
+              <span className="truncate">
+                {ephemeralVmLabel} / {selectedRecipe.name}
+              </span>
+            </span>
+          ) : selectedHost ? (
+            <span className="inline-flex min-w-0 items-center gap-1.5">
+              <Server className="size-3.5 shrink-0 text-muted-foreground" />
+              <span className="truncate">{selectedHost.label}</span>
+            </span>
+          ) : (
+            <span className="text-muted-foreground">
+              {translate(
+                'auto.components.NewWorkspaceComposerCard.chooseRunTarget',
+                'Choose target'
+              )}
+            </span>
+          )}
+          <ChevronsUpDown className="size-3.5 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
       <PopoverContent
         align="start"
         className="w-[var(--radix-popover-trigger-width)] min-w-[18rem] p-0"
       >
-        <Command value={selected?.id ?? '__existing_host__'}>
+        <Command value={selectedValue}>
           <CommandList>
             <CommandEmpty>
               {translate(
-                'auto.components.NewWorkspaceComposerCard.noVmRecipes',
-                'No VM recipes found.'
+                'auto.components.NewWorkspaceComposerCard.noRunTargets',
+                'No run targets are ready for this project.'
               )}
             </CommandEmpty>
-            <CommandItem
-              value="__existing_host__"
-              onSelect={() => handleSelect(null)}
-              className="items-center gap-2 px-3 py-2"
-            >
-              <Check
-                className={cn(
-                  'size-4 text-foreground',
-                  selected === null ? 'opacity-100' : 'opacity-0'
-                )}
-              />
-              <div className="min-w-0 flex-1">
-                <div className="truncate text-sm">{existingHostLabel}</div>
-              </div>
-            </CommandItem>
-            {recipes.map((recipe) => (
+            {hostOptions.map((option) => (
               <CommandItem
-                key={recipe.id}
-                value={recipe.id}
-                onSelect={() => handleSelect(recipe.id)}
+                key={option.id}
+                value={`host:${option.id}`}
+                onSelect={() => handleHostSelect(option.id)}
                 className="items-center gap-2 px-3 py-2"
               >
                 <Check
                   className={cn(
                     'size-4 text-foreground',
-                    recipe.id === selected?.id ? 'opacity-100' : 'opacity-0'
+                    !selectedRecipe && option.id === selectedHost?.id ? 'opacity-100' : 'opacity-0'
                   )}
                 />
+                <Server className="size-3.5 shrink-0 text-muted-foreground" />
                 <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm">{recipe.name}</div>
+                  <div className="truncate text-sm">{option.label}</div>
                   <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
-                    {getRecipeCommandDisplay(recipe.command)} · {getRecipeCleanupLabel(recipe)}
+                    {option.path}
                   </div>
-                  {recipe.description ? (
-                    <div className="truncate text-[11px] text-muted-foreground">
-                      {recipe.description}
-                    </div>
-                  ) : null}
                 </div>
               </CommandItem>
             ))}
+            {recipes.length > 0 ? (
+              <Popover open={vmRecipesOpen} onOpenChange={setVmRecipesOpen}>
+                <PopoverTrigger asChild>
+                  <button
+                    type="button"
+                    role="option"
+                    aria-selected={Boolean(selectedRecipe)}
+                    className={cn(
+                      'flex w-full items-center gap-2 rounded-sm px-3 py-2 text-left text-sm outline-none',
+                      'hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground',
+                      selectedRecipe && 'bg-accent/60'
+                    )}
+                  >
+                    <Check
+                      className={cn(
+                        'size-4 text-foreground',
+                        selectedRecipe ? 'opacity-100' : 'opacity-0'
+                      )}
+                    />
+                    <Cloud className="size-3.5 shrink-0 text-muted-foreground" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm">{ephemeralVmLabel}</div>
+                    </div>
+                    <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+                  </button>
+                </PopoverTrigger>
+                <PopoverContent side="right" align="start" sideOffset={6} className="w-72 p-0">
+                  <Command value={selectedRecipe ? `recipe:${selectedRecipe.id}` : ''}>
+                    <CommandList>
+                      {recipes.map((recipe) => (
+                        <CommandItem
+                          key={recipe.id}
+                          value={`recipe:${recipe.id}`}
+                          onSelect={() => handleRecipeSelect(recipe.id)}
+                          className="items-center gap-2 px-3 py-2"
+                        >
+                          <Check
+                            className={cn(
+                              'size-4 text-foreground',
+                              recipe.id === selectedRecipe?.id ? 'opacity-100' : 'opacity-0'
+                            )}
+                          />
+                          <div className="min-w-0 flex-1">
+                            <div className="truncate text-sm">{recipe.name}</div>
+                            <div className="mt-0.5 truncate text-[11px] text-muted-foreground">
+                              {getRecipeCommandDisplay(recipe.command)} ·{' '}
+                              {getRecipeCleanupLabel(recipe)}
+                            </div>
+                            {recipe.description ? (
+                              <div className="truncate text-[11px] text-muted-foreground">
+                                {recipe.description}
+                              </div>
+                            ) : null}
+                          </div>
+                        </CommandItem>
+                      ))}
+                    </CommandList>
+                  </Command>
+                </PopoverContent>
+              </Popover>
+            ) : null}
           </CommandList>
         </Command>
       </PopoverContent>
@@ -751,27 +848,18 @@ export default function NewWorkspaceComposerCard({
                 )}
             </p>
           ) : null}
-          {readyProjectHostSetupOptions.length > 1 ? (
+          {readyProjectHostSetupOptions.length > 1 || ephemeralVmRecipes.length > 0 ? (
             <div className="space-y-1">
               <label className="block min-w-0 truncate text-xs font-medium text-muted-foreground">
                 {translate('auto.components.NewWorkspaceComposerCard.runOn', 'Run on')}
               </label>
-              <ProjectHostSetupCombobox
-                options={readyProjectHostSetupOptions}
-                value={selectedProjectHostSetupId ?? null}
-                onValueChange={handleProjectHostSetupChange}
-              />
-            </div>
-          ) : null}
-          {ephemeralVmRecipes.length > 0 ? (
-            <div className="space-y-1">
-              <label className="block min-w-0 truncate text-xs font-medium text-muted-foreground">
-                {translate('auto.components.NewWorkspaceComposerCard.vmRecipe', 'VM recipe')}
-              </label>
-              <EphemeralVmRecipeCombobox
+              <WorkspaceRunTargetCombobox
+                hostOptions={readyProjectHostSetupOptions}
+                hostValue={selectedProjectHostSetupId ?? null}
+                onHostChange={handleProjectHostSetupChange}
                 recipes={ephemeralVmRecipes}
-                value={selectedEphemeralVmRecipeId}
-                onValueChange={onEphemeralVmRecipeChange}
+                recipeValue={selectedEphemeralVmRecipeId}
+                onRecipeChange={onEphemeralVmRecipeChange}
               />
               {ephemeralVmRecipeError ? (
                 <p className="whitespace-pre-line text-[11px] text-destructive">
