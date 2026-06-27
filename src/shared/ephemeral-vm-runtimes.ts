@@ -4,6 +4,9 @@ import { EphemeralVmRecipeResultSchema } from './ephemeral-vm-recipes'
 export const EphemeralVmRuntimeStatusSchema = z.enum([
   'provisioning',
   'running',
+  'suspended',
+  'suspend_failed',
+  'resume_failed',
   'failed',
   'cleanup_pending',
   'cleanup_failed',

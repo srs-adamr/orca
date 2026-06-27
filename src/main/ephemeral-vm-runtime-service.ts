@@ -7,6 +7,8 @@ import {
 import type { EphemeralVmRuntimeRecord } from '../shared/ephemeral-vm-runtimes'
 import {
   runEphemeralVmRecipeCleanup,
+  runEphemeralVmRecipeResume,
+  runEphemeralVmRecipeSuspend,
   runEphemeralVmRecipeStart,
   type EphemeralVmRecipeContext,
   type EphemeralVmRecipeStartFailure,
@@ -54,6 +56,30 @@ export type CleanupEphemeralVmRuntimeArgs = {
 }
 
 export type CleanupEphemeralVmRuntimeResult =
+  | {
+      ok: true
+      runtime: EphemeralVmRuntimeRecord
+      skipped: boolean
+    }
+  | {
+      ok: false
+      runtime: EphemeralVmRuntimeRecord
+      error: string
+    }
+
+export type SuspendEphemeralVmRuntimeResult =
+  | {
+      ok: true
+      runtime: EphemeralVmRuntimeRecord
+      skipped: boolean
+    }
+  | {
+      ok: false
+      runtime: EphemeralVmRuntimeRecord
+      error: string
+    }
+
+export type ResumeEphemeralVmRuntimeResult =
   | {
       ok: true
       runtime: EphemeralVmRuntimeRecord
@@ -152,6 +178,75 @@ export async function cleanupEphemeralVmRuntime(
     updatedAt: Date.now()
   })
   return { ok: true, runtime: cleaned, skipped: cleanup.skipped }
+}
+
+export async function suspendEphemeralVmRuntime(
+  args: CleanupEphemeralVmRuntimeArgs
+): Promise<SuspendEphemeralVmRuntimeResult> {
+  const existing = listEphemeralVmRuntimes(args.userDataPath).find(
+    (entry) => entry.id === args.runtimeId
+  )
+  if (!existing) {
+    throw new Error(`Unknown ephemeral VM runtime: ${args.runtimeId}`)
+  }
+  const suspend = await runEphemeralVmRecipeSuspend({
+    repoPath: args.repoPath,
+    recipe: args.recipe,
+    context: contextFromRuntime(args.repoPath, existing),
+    recipeResult: existing.recipeResult,
+    signal: args.signal,
+    onStdout: args.onStdout,
+    onStderr: args.onStderr
+  })
+
+  if (!suspend.ok) {
+    const failed = updateEphemeralVmRuntimeStatus(args.userDataPath, existing.id, {
+      status: 'suspend_failed',
+      updatedAt: Date.now()
+    })
+    return { ok: false, runtime: failed, error: suspend.error ?? 'Suspend failed.' }
+  }
+
+  const suspended = updateEphemeralVmRuntimeStatus(args.userDataPath, existing.id, {
+    status: suspend.skipped ? existing.status : 'suspended',
+    updatedAt: Date.now()
+  })
+  return { ok: true, runtime: suspended, skipped: suspend.skipped }
+}
+
+export async function resumeEphemeralVmRuntime(
+  args: CleanupEphemeralVmRuntimeArgs
+): Promise<ResumeEphemeralVmRuntimeResult> {
+  const existing = listEphemeralVmRuntimes(args.userDataPath).find(
+    (entry) => entry.id === args.runtimeId
+  )
+  if (!existing) {
+    throw new Error(`Unknown ephemeral VM runtime: ${args.runtimeId}`)
+  }
+  const resume = await runEphemeralVmRecipeResume({
+    repoPath: args.repoPath,
+    recipe: args.recipe,
+    context: contextFromRuntime(args.repoPath, existing),
+    recipeResult: existing.recipeResult,
+    signal: args.signal,
+    onStdout: args.onStdout,
+    onStderr: args.onStderr
+  })
+
+  if (!resume.ok) {
+    const failed = updateEphemeralVmRuntimeStatus(args.userDataPath, existing.id, {
+      status: 'resume_failed',
+      updatedAt: Date.now()
+    })
+    return { ok: false, runtime: failed, error: resume.error }
+  }
+
+  const runtime = updateEphemeralVmRuntimeStatus(args.userDataPath, existing.id, {
+    status: 'running',
+    ...(!resume.skipped ? { recipeResult: resume.result } : {}),
+    updatedAt: Date.now()
+  })
+  return { ok: true, runtime, skipped: resume.skipped }
 }
 
 function contextFromRuntime(

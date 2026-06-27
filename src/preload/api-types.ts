@@ -2048,6 +2048,8 @@ export type PreloadApi = {
       runtimeId: string
       workspaceId: string
     }) => Promise<EphemeralVmRuntimeRecord>
+    suspendWorkspace: (args: { workspaceId: string }) => Promise<EphemeralVmRuntimeRecord | null>
+    resumeWorkspace: (args: { workspaceId: string }) => Promise<EphemeralVmRuntimeRecord | null>
     cleanup: (args: { runtimeId: string }) => Promise<EphemeralVmRuntimeRecord>
     getCleanupCommand: (args: { runtimeId: string }) => Promise<{
       runtimeId: string

@@ -1,8 +1,9 @@
-import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'fs'
+import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { encodePairingOffer, PAIRING_OFFER_VERSION } from '../../shared/pairing'
+import { listEnvironments } from '../../shared/runtime-environment-store'
 
 const handlers = new Map<string, (_event: unknown, args: never) => Promise<unknown> | unknown>()
 const { handleMock, removeHandlerMock, getPathMock } = vi.hoisted(() => ({
@@ -221,6 +222,95 @@ describe('registerEphemeralVmHandlers', () => {
         workspaceId: 'repo-1::/workspace/repo/worktree'
       })
     )
+  })
+
+  it('runs suspend and resume for an attached ephemeral VM workspace', async () => {
+    const userDataPath = makeDir('orca-ephemeral-vm-ipc-user-data-')
+    const repoPath = makeDir('orca-ephemeral-vm-ipc-repo-')
+    getPathMock.mockReturnValue(userDataPath)
+    mkdirSync(join(repoPath, 'scripts'), { recursive: true })
+    const startPath = join(repoPath, 'scripts', 'start.js')
+    const suspendPath = join(repoPath, 'scripts', 'suspend.js')
+    const resumePath = join(repoPath, 'scripts', 'resume.js')
+    const resumedPairingCode = encodePairingOffer({
+      v: PAIRING_OFFER_VERSION,
+      endpoint: 'wss://resumed.example.com',
+      deviceToken: 'resumed-token',
+      publicKeyB64: 'resumed-public-key'
+    })
+    writeFileSync(
+      startPath,
+      [
+        'console.log(JSON.stringify({',
+        '  schemaVersion: 1,',
+        `  pairingCode: ${JSON.stringify(makePairingCode())},`,
+        "  projectRoot: '/workspace/repo'",
+        '}))'
+      ].join('\n')
+    )
+    writeFileSync(
+      suspendPath,
+      [
+        "const fs = require('fs')",
+        "const payload = JSON.parse(fs.readFileSync(0, 'utf8'))",
+        "fs.writeFileSync('suspend-mode.txt', payload.mode)"
+      ].join('\n')
+    )
+    writeFileSync(
+      resumePath,
+      [
+        "const fs = require('fs')",
+        "const payload = JSON.parse(fs.readFileSync(0, 'utf8'))",
+        'if (payload.mode !== "resume") process.exit(2)',
+        'console.log(JSON.stringify({',
+        '  schemaVersion: 1,',
+        `  pairingCode: ${JSON.stringify(resumedPairingCode)},`,
+        "  projectRoot: '/workspace/resumed'",
+        '}))'
+      ].join('\n')
+    )
+    writeFileSync(
+      join(repoPath, 'orca.yaml'),
+      [
+        'vmRecipes:',
+        '  - id: cloud-sandbox',
+        '    name: Cloud Sandbox',
+        `    create: ${JSON.stringify(nodeCommand(startPath))}`,
+        `    suspend: ${JSON.stringify(nodeCommand(suspendPath))}`,
+        `    resume: ${JSON.stringify(nodeCommand(resumePath))}`,
+        '    destroy: none'
+      ].join('\n')
+    )
+
+    registerEphemeralVmHandlers(makeStore(repoPath) as never)
+    const provisioned = (await handlers.get('ephemeralVm:provision')?.(null, {
+      repoId: 'repo-1',
+      recipeId: 'cloud-sandbox'
+    } as never)) as { ok: true; runtime: { id: string }; environment: { id: string } }
+    await handlers.get('ephemeralVm:attachWorkspace')?.(null, {
+      runtimeId: provisioned.runtime.id,
+      workspaceId: 'workspace-1'
+    } as never)
+
+    const suspended = await handlers.get('ephemeralVm:suspendWorkspace')?.(null, {
+      workspaceId: 'workspace-1'
+    } as never)
+    expect(suspended).toEqual(expect.objectContaining({ status: 'suspended' }))
+    expect(readFileSync(join(repoPath, 'suspend-mode.txt'), 'utf8')).toBe('suspend')
+
+    const resumed = await handlers.get('ephemeralVm:resumeWorkspace')?.(null, {
+      workspaceId: 'workspace-1'
+    } as never)
+    expect(resumed).toEqual(
+      expect.objectContaining({
+        status: 'running',
+        recipeResult: expect.objectContaining({ projectRoot: '/workspace/resumed' })
+      })
+    )
+    const environment = listEnvironments(userDataPath).find(
+      (entry) => entry.id === provisioned.environment.id
+    )
+    expect(environment?.endpoints[0]?.endpoint).toBe('wss://resumed.example.com')
   })
 
   it('returns a copyable cleanup command for a persisted runtime', async () => {

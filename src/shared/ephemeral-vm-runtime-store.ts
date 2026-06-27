@@ -58,6 +58,7 @@ export function updateEphemeralVmRuntimeStatus(
     workspaceId?: string
     workspaceName?: string
     runtimeEnvironmentId?: string
+    recipeResult?: EphemeralVmRuntimeRecord['recipeResult']
     updatedAt?: number
   }
 ): EphemeralVmRuntimeRecord {
@@ -84,6 +85,7 @@ export function updateEphemeralVmRuntimeStatus(
     ...(args.workspaceId ? { workspaceId: args.workspaceId } : {}),
     ...(args.workspaceName ? { workspaceName: args.workspaceName } : {}),
     ...(args.runtimeEnvironmentId ? { runtimeEnvironmentId: args.runtimeEnvironmentId } : {}),
+    ...(args.recipeResult ? { recipeResult: args.recipeResult } : {}),
     updatedAt: args.updatedAt ?? Date.now()
   })
   writeEphemeralVmRuntimeStore(userDataPath, {

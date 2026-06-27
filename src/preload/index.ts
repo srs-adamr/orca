@@ -2362,6 +2362,8 @@ const api = {
     },
     listRuntimes: () => ipcRenderer.invoke('ephemeralVm:listRuntimes'),
     attachWorkspace: (args) => ipcRenderer.invoke('ephemeralVm:attachWorkspace', args),
+    suspendWorkspace: (args) => ipcRenderer.invoke('ephemeralVm:suspendWorkspace', args),
+    resumeWorkspace: (args) => ipcRenderer.invoke('ephemeralVm:resumeWorkspace', args),
     cleanup: (args) => ipcRenderer.invoke('ephemeralVm:cleanup', args),
     getCleanupCommand: (args) => ipcRenderer.invoke('ephemeralVm:getCleanupCommand', args)
   } satisfies PreloadApi['ephemeralVm'],

@@ -6,8 +6,15 @@ import {
   updateEphemeralVmRuntimeStatus
 } from '../../shared/ephemeral-vm-runtime-store'
 import type { EphemeralVmRuntimeRecord } from '../../shared/ephemeral-vm-runtimes'
-import { removeEnvironment } from '../../shared/runtime-environment-store'
-import { cleanupEphemeralVmRuntime } from '../ephemeral-vm-runtime-service'
+import {
+  removeEnvironment,
+  updateEnvironmentFromPairingCode
+} from '../../shared/runtime-environment-store'
+import {
+  cleanupEphemeralVmRuntime,
+  resumeEphemeralVmRuntime,
+  suspendEphemeralVmRuntime
+} from '../ephemeral-vm-runtime-service'
 import {
   buildEphemeralVmRecipeCleanupCommand,
   buildEphemeralVmRecipeCleanupPayload
@@ -26,6 +33,8 @@ export function registerEphemeralVmRuntimeHandlers(store: Store): void {
   ipcMain.removeHandler('ephemeralVm:attachWorkspace')
   ipcMain.removeHandler('ephemeralVm:listRuntimes')
   ipcMain.removeHandler('ephemeralVm:cleanup')
+  ipcMain.removeHandler('ephemeralVm:suspendWorkspace')
+  ipcMain.removeHandler('ephemeralVm:resumeWorkspace')
   ipcMain.removeHandler('ephemeralVm:getCleanupCommand')
 
   ipcMain.handle('ephemeralVm:listRuntimes', (): EphemeralVmRuntimeRecord[] => {
@@ -88,6 +97,65 @@ export function registerEphemeralVmRuntimeHandlers(store: Store): void {
           // Cleanup of provider resources matters more than hiding a stale local
           // environment row; users can still remove that manually.
         }
+      }
+      return result.runtime
+    }
+  )
+
+  ipcMain.handle(
+    'ephemeralVm:suspendWorkspace',
+    async (_event, args: { workspaceId: string }): Promise<EphemeralVmRuntimeRecord | null> => {
+      const userDataPath = app.getPath('userData')
+      const runtime = listEphemeralVmRuntimes(userDataPath).find(
+        (entry) =>
+          entry.workspaceId === args.workspaceId &&
+          entry.status !== 'cleaned' &&
+          entry.status !== 'cleanup_pending'
+      )
+      if (!runtime?.repoId) {
+        return null
+      }
+      const recipeContext = getRuntimeRecipeContext(store, userDataPath, runtime.id)
+      const result = await suspendEphemeralVmRuntime({
+        userDataPath,
+        repoPath: recipeContext.repo.repo.path,
+        recipe: recipeContext.recipe,
+        runtimeId: runtime.id
+      })
+      if (!result.ok) {
+        throw new Error(result.error)
+      }
+      return result.runtime
+    }
+  )
+
+  ipcMain.handle(
+    'ephemeralVm:resumeWorkspace',
+    async (_event, args: { workspaceId: string }): Promise<EphemeralVmRuntimeRecord | null> => {
+      const userDataPath = app.getPath('userData')
+      const runtime = listEphemeralVmRuntimes(userDataPath).find(
+        (entry) =>
+          entry.workspaceId === args.workspaceId &&
+          entry.status !== 'cleaned' &&
+          entry.status !== 'cleanup_pending'
+      )
+      if (!runtime?.repoId) {
+        return null
+      }
+      const recipeContext = getRuntimeRecipeContext(store, userDataPath, runtime.id)
+      const result = await resumeEphemeralVmRuntime({
+        userDataPath,
+        repoPath: recipeContext.repo.repo.path,
+        recipe: recipeContext.recipe,
+        runtimeId: runtime.id
+      })
+      if (!result.ok) {
+        throw new Error(result.error)
+      }
+      if (!result.skipped && runtime.runtimeEnvironmentId) {
+        updateEnvironmentFromPairingCode(userDataPath, runtime.runtimeEnvironmentId, {
+          pairingCode: result.runtime.recipeResult.pairingCode
+        })
       }
       return result.runtime
     }

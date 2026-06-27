@@ -3,7 +3,17 @@ import { randomUUID } from 'node:crypto'
 import { statSync } from 'node:fs'
 import type { OrcaVmRecipe } from './types'
 import { parseEphemeralVmRecipeResult, type EphemeralVmRecipeResult } from './ephemeral-vm-recipes'
-import { quoteShellToken, runRecipeCommand } from './ephemeral-vm-recipe-process'
+import { runRecipeCommand } from './ephemeral-vm-recipe-process'
+import {
+  buildEphemeralVmRecipeCleanupPayload,
+  buildEphemeralVmRecipeLifecyclePayload
+} from './ephemeral-vm-recipe-lifecycle-payload'
+
+export {
+  buildEphemeralVmRecipeCleanupCommand,
+  buildEphemeralVmRecipeCleanupPayload,
+  type EphemeralVmRecipeCleanupPayload
+} from './ephemeral-vm-recipe-lifecycle-payload'
 
 export type EphemeralVmRecipeContext = {
   instanceId?: string
@@ -65,6 +75,8 @@ export type EphemeralVmRecipeCleanupArgs = {
   spawnCommand?: typeof spawn
 }
 
+export type EphemeralVmRecipeLifecycleArgs = EphemeralVmRecipeCleanupArgs
+
 export type EphemeralVmRecipeCleanupResult = {
   ok: boolean
   skipped: boolean
@@ -75,16 +87,16 @@ export type EphemeralVmRecipeCleanupResult = {
   signal: NodeJS.Signals | null
 }
 
-export type EphemeralVmRecipeCleanupPayload = {
-  schemaVersion: 1
-  mode: 'destroy'
-  recipeId: string
-  instanceId?: string
-  projectId?: string
-  workspaceId?: string
-  workspaceName?: string
-  recipeResult: EphemeralVmRecipeResult
-}
+export type EphemeralVmRecipeResumeResult =
+  | (EphemeralVmRecipeStartSuccess & { skipped: false })
+  | (EphemeralVmRecipeStartFailure & { skipped: false })
+  | {
+      ok: true
+      skipped: true
+      context: EphemeralVmRecipeContext
+      stdout: string
+      stderr: string
+    }
 
 export async function runEphemeralVmRecipeStart(
   args: EphemeralVmRecipeStartArgs
@@ -167,37 +179,99 @@ export async function runEphemeralVmRecipeCleanup(
   return { ok: true, skipped: false, ...processResult }
 }
 
-export function buildEphemeralVmRecipeCleanupPayload(args: {
-  recipe: Pick<OrcaVmRecipe, 'id'>
-  context: EphemeralVmRecipeContext
-  recipeResult: EphemeralVmRecipeResult
-}): EphemeralVmRecipeCleanupPayload {
-  return {
-    schemaVersion: 1,
-    mode: 'destroy',
-    recipeId: args.recipe.id,
-    instanceId: args.context.instanceId,
-    projectId: args.context.projectId,
-    workspaceId: args.context.workspaceId,
-    workspaceName: args.context.workspaceName,
-    recipeResult: args.recipeResult
+export async function runEphemeralVmRecipeSuspend(
+  args: EphemeralVmRecipeLifecycleArgs
+): Promise<EphemeralVmRecipeCleanupResult> {
+  validateRepoPath(args.repoPath)
+  if (!args.recipe.suspend) {
+    return { ok: true, skipped: true, stdout: '', stderr: '', exitCode: null, signal: null }
   }
+
+  const payload = buildEphemeralVmRecipeLifecyclePayload({ ...args, mode: 'suspend' })
+  const processResult = await runRecipeCommand({
+    command: args.recipe.suspend,
+    repoPath: args.repoPath,
+    context: args.context,
+    mode: 'suspend',
+    stdin: `${JSON.stringify(payload)}\n`,
+    env: args.env,
+    maxCaptureBytes: args.maxCaptureBytes,
+    signal: args.signal,
+    onStdout: args.onStdout,
+    onStderr: args.onStderr,
+    spawnCommand: args.spawnCommand
+  })
+
+  if (processResult.exitCode !== 0) {
+    return {
+      ok: false,
+      skipped: false,
+      error: `Suspend exited with code ${processResult.exitCode ?? 'unknown'}.`,
+      ...processResult
+    }
+  }
+
+  return { ok: true, skipped: false, ...processResult }
 }
 
-export function buildEphemeralVmRecipeCleanupCommand(args: {
-  destroyCommand: string
-  payload: EphemeralVmRecipeCleanupPayload
-}): string {
-  const payloadBase64 = Buffer.from(`${JSON.stringify(args.payload)}\n`, 'utf8').toString('base64')
-  return [
-    'node',
-    '-e',
-    quoteShellToken(
-      `process.stdout.write(Buffer.from(${JSON.stringify(payloadBase64)}, 'base64').toString('utf8'))`
-    ),
-    '|',
-    args.destroyCommand
-  ].join(' ')
+export async function runEphemeralVmRecipeResume(
+  args: EphemeralVmRecipeLifecycleArgs
+): Promise<EphemeralVmRecipeResumeResult> {
+  validateRepoPath(args.repoPath)
+  if (!args.recipe.resume) {
+    return {
+      ok: true,
+      skipped: true,
+      context: args.context,
+      stdout: '',
+      stderr: ''
+    }
+  }
+
+  const payload = buildEphemeralVmRecipeLifecyclePayload({ ...args, mode: 'resume' })
+  const processResult = await runRecipeCommand({
+    command: args.recipe.resume,
+    repoPath: args.repoPath,
+    context: args.context,
+    mode: 'resume',
+    stdin: `${JSON.stringify(payload)}\n`,
+    env: args.env,
+    maxCaptureBytes: args.maxCaptureBytes,
+    signal: args.signal,
+    onStdout: args.onStdout,
+    onStderr: args.onStderr,
+    spawnCommand: args.spawnCommand
+  })
+
+  if (processResult.exitCode !== 0) {
+    return {
+      ok: false,
+      skipped: false,
+      context: args.context,
+      error: `Resume exited with code ${processResult.exitCode ?? 'unknown'}.`,
+      ...processResult
+    }
+  }
+
+  const parsed = parseEphemeralVmRecipeResult(processResult.stdout)
+  if (!parsed.ok) {
+    return {
+      ok: false,
+      skipped: false,
+      context: args.context,
+      error: parsed.error,
+      ...processResult
+    }
+  }
+
+  return {
+    ok: true,
+    skipped: false,
+    context: args.context,
+    result: parsed.result,
+    stdout: processResult.stdout,
+    stderr: processResult.stderr
+  }
 }
 
 function buildRecipeContext(

@@ -870,7 +870,7 @@ const WorktreeCard = React.memo(function WorktreeCard({
         sshDisconnected: isSshDisconnected
       })
       onImmediateActivate?.(worktree.id, activationRowKey)
-      activateWorktreeFromSidebar(worktree.id)
+      void activateWorktreeFromSidebar(worktree.id)
       if (isSshDisconnected) {
         setShowDisconnectedDialog(true)
       }

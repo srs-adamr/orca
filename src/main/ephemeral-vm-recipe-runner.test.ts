@@ -7,7 +7,9 @@ import {
   buildEphemeralVmRecipeCleanupCommand,
   buildEphemeralVmRecipeCleanupPayload,
   runEphemeralVmRecipeCleanup,
-  runEphemeralVmRecipeStart
+  runEphemeralVmRecipeResume,
+  runEphemeralVmRecipeStart,
+  runEphemeralVmRecipeSuspend
 } from './ephemeral-vm-recipe-runner'
 import type { OrcaVmRecipe } from '../shared/types'
 
@@ -257,5 +259,98 @@ describe('runEphemeralVmRecipeCleanup', () => {
       exitCode: null,
       signal: null
     })
+  })
+})
+
+describe('runEphemeralVmRecipeSuspend and runEphemeralVmRecipeResume', () => {
+  it('passes suspend context and recipe result on stdin', async () => {
+    const repoPath = makeRepo()
+    const suspendPath = join(repoPath, 'suspend.js')
+    writeFileSync(
+      suspendPath,
+      [
+        "let input = ''",
+        "process.stdin.on('data', (chunk) => { input += chunk })",
+        "process.stdin.on('end', () => {",
+        '  const payload = JSON.parse(input)',
+        '  console.log(JSON.stringify({ mode: payload.mode, envMode: process.env.ORCA_VM_MODE }))',
+        '})'
+      ].join('\n')
+    )
+
+    const result = await runEphemeralVmRecipeSuspend({
+      repoPath,
+      recipe: {
+        id: 'cloud-sandbox',
+        name: 'Cloud Sandbox',
+        create: 'unused',
+        suspend: nodeCommand(suspendPath)
+      },
+      context: {
+        recipeId: 'cloud-sandbox',
+        repoPath,
+        instanceId: 'orca-test-instance'
+      },
+      recipeResult: {
+        schemaVersion: 1,
+        pairingCode: makePairingCode(),
+        projectRoot: '/workspace/repo'
+      }
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.skipped).toBe(false)
+    expect(JSON.parse(result.stdout)).toEqual({ mode: 'suspend', envMode: 'suspend' })
+  })
+
+  it('runs resume and parses the fresh recipe result', async () => {
+    const repoPath = makeRepo()
+    const resumePath = join(repoPath, 'resume.js')
+    const nextPairingCode = makePairingCode()
+    writeFileSync(
+      resumePath,
+      [
+        "let input = ''",
+        "process.stdin.on('data', (chunk) => { input += chunk })",
+        "process.stdin.on('end', () => {",
+        '  const payload = JSON.parse(input)',
+        '  if (payload.mode !== "resume") process.exit(2)',
+        '  console.log(JSON.stringify({',
+        '    schemaVersion: 1,',
+        `    pairingCode: ${JSON.stringify(nextPairingCode)},`,
+        "    projectRoot: '/workspace/resumed'",
+        '  }))',
+        '})'
+      ].join('\n')
+    )
+
+    const result = await runEphemeralVmRecipeResume({
+      repoPath,
+      recipe: {
+        id: 'cloud-sandbox',
+        name: 'Cloud Sandbox',
+        create: 'unused',
+        resume: nodeCommand(resumePath)
+      },
+      context: {
+        recipeId: 'cloud-sandbox',
+        repoPath,
+        instanceId: 'orca-test-instance'
+      },
+      recipeResult: {
+        schemaVersion: 1,
+        pairingCode: makePairingCode(),
+        projectRoot: '/workspace/repo'
+      }
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.skipped).toBe(false)
+    if (result.ok && !result.skipped) {
+      expect(result.result).toMatchObject({
+        pairingCode: nextPairingCode,
+        projectRoot: '/workspace/resumed'
+      })
+    }
   })
 })
