@@ -144,7 +144,7 @@ export default function WorktreeCreationPanel({
               <div className="text-[11px] text-muted-foreground">{provisioningCleanupLabel}</div>
             ) : null}
             {entry.phase === 'provisioning-vm' && entry.provisioningLog ? (
-              <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-sm border border-border bg-muted/30 p-2 font-mono text-[11px] leading-4 text-muted-foreground">
+              <pre className="scrollbar-sleek max-h-48 overflow-auto whitespace-pre-wrap rounded-sm border border-border bg-muted/30 p-2 font-mono text-[11px] leading-4 text-muted-foreground">
                 {entry.provisioningLog}
               </pre>
             ) : null}

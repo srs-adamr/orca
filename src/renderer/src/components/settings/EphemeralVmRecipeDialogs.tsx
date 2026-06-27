@@ -23,7 +23,7 @@ export function RecipeDoctorDialog({
             <div className="text-sm">
               {result.recipeId} · {result.ok ? 'ready' : 'needs attention'}
             </div>
-            <div className="max-h-80 space-y-2 overflow-auto">
+            <div className="scrollbar-sleek max-h-80 space-y-2 overflow-auto">
               {result.checks.map((check) => (
                 <div key={check.id} className="rounded-md border border-border/60 p-2">
                   <div
