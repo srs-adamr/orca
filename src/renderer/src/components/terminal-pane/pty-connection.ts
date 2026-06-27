@@ -20,6 +20,7 @@ import {
   hasCachedWindowsTerminalCapabilities
 } from '@/lib/windows-terminal-capabilities'
 import { shouldSeedCacheTimerOnInitialTitle } from './cache-timer-seeding'
+import { shouldReconcileDeadSession } from './terminal-dead-session-reconcile'
 import type { PtyConnectionDeps } from './pty-connection-types'
 import { safeFit } from '@/lib/pane-manager/pane-tree-ops'
 import { getFitOverrideForPty, bindPanePtyId } from '@/lib/pane-manager/mobile-fit-overrides'
@@ -506,6 +507,8 @@ let inactiveForegroundImmediateBudgetWindowStart = 0
 
 type PanePtyBinding = IDisposable & {
   syncProcessTracking: () => void
+  noteVisibilityResume: () => void
+  reconcileIfSessionDead: (liveSessionIds: Set<string>) => void
 }
 
 function isAgentTaskCompleteNotificationEnabled(): boolean {
@@ -1293,7 +1296,17 @@ export function connectPanePty(
     }
   })
 
+  // Why: the transport's own exit handler (pty-transport.ts) normally makes
+  // onExit run-at-most-once by clearing connected/ptyId + unregistering BEFORE
+  // calling it. reconcileIfSessionDead drives onExit directly (bypassing that),
+  // so this binding-local one-shot guards the body so reconcile and any racing
+  // real/synthetic pty:exit for the same id close the pane exactly once.
+  let onExitHasRun = false
   const onExit = (ptyId: string): void => {
+    if (onExitHasRun) {
+      return
+    }
+    onExitHasRun = true
     agentCompletionCoordinator.dispose()
     clearPanePtyFitBinding()
     const isSuppressedExit = deps.consumeSuppressedPtyExit(ptyId)
@@ -1925,6 +1938,11 @@ export function connectPanePty(
       clearPendingTerminalInputIntent()
       return
     }
+    // Why (Defect #2): a keystroke against a pane whose daemon session was
+    // reaped while hidden is silently dropped — sendInput still returns true.
+    // Kick off a fire-and-forget liveness re-check so the dead pane is cleaned
+    // up without relying on (the never-occurring) sendInput false return.
+    recheckLivenessAfterInput()
     const intent = pendingTerminalInputIntent
     // Why: real xterm can deliver the terminal byte even when our DOM keydown
     // listener missed the press. Exact Ctrl+C/Escape bytes are still safe to
@@ -4134,10 +4152,89 @@ export function connectPanePty(
     scheduleRuntimeGraphSync()
   })
 
+  // Why: on visibility resume a pane may still be bound to a daemon session
+  // reaped while hidden (the missed-exit defect). Route it through the SAME
+  // teardown a real onExit runs. Re-validate identity at apply time so a
+  // reattach racing the listSessions snapshot is never clobbered, and respect
+  // the remote/SSH guards. Suppression semantics come for free via onExit
+  // (which consults consumeSuppressedPtyExit) plus the one-shot guard above.
+  const reconcileIfSessionDead = (liveSessionIds: Set<string>): void => {
+    if (disposed || onExitHasRun) {
+      return
+    }
+    const currentPtyId = transport.getPtyId()
+    if (
+      !currentPtyId ||
+      !shouldReconcileDeadSession({
+        ptyId: currentPtyId,
+        connectionId: transport.getConnectionId?.(),
+        liveSessionIds
+      })
+    ) {
+      return
+    }
+    onExit(currentPtyId)
+  }
+
+  // Why (perf): the only moment a daemon session can be reaped behind the
+  // renderer's back is while the pane was surface-hidden. So the input-driven
+  // re-check is only useful in the window right after a resume — once it (or
+  // the resume pass) has confirmed liveness for this resume, re-polling on
+  // every subsequent keystroke is pure waste: listSessions() is a
+  // renderer→main→daemon round-trip (DaemonPtyAdapter.listProcesses requests
+  // `listSessions` from the daemon subprocess), so an ungated per-keystroke
+  // re-check would put a process-enumeration round-trip on the typing hot path
+  // for every healthy local pane. Fire at most ONCE per resume window; reset
+  // on the next hide→show. This preserves the "reduces not eliminates the
+  // first-keystroke drop" intent — the first keystroke after a resume still
+  // triggers exactly one re-check.
+  let livenessRecheckFiredSinceResume = false
+
+  // Why (Defect #2 defense-in-depth): in the broken state sendInput returns
+  // true (connected/ptyId still set) so the dropped keystroke is invisible to
+  // the renderer. A fire-and-forget liveness re-check on the FIRST input after
+  // a resume cleans the pane up promptly instead of waiting for the resume
+  // pass alone. It REDUCES but cannot eliminate the first-keystroke drop (that
+  // byte is already gone daemon-side).
+  const recheckLivenessAfterInput = (): void => {
+    if (disposed || onExitHasRun || livenessRecheckFiredSinceResume) {
+      return
+    }
+    const currentPtyId = transport.getPtyId()
+    const currentConnectionId = transport.getConnectionId?.()
+    if (
+      !currentPtyId ||
+      // Why: `remote:` web-runtime liveness is owned by the host snapshot, not
+      // listSessions; skip here so a remote pane's keystrokes never put a local
+      // daemon round-trip on the typing hot path (reconcile would no-op anyway).
+      isRemoteRuntimePtyId(currentPtyId) ||
+      (currentConnectionId !== null && currentConnectionId !== undefined)
+    ) {
+      return
+    }
+    // Why: set BEFORE the IPC so concurrent keystrokes coalesce to one in-flight
+    // request rather than fanning out a round-trip per byte typed.
+    livenessRecheckFiredSinceResume = true
+    void window.api.pty
+      .listSessions()
+      .then((sessions) => {
+        reconcileIfSessionDead(new Set(sessions.map((session) => session.id)))
+      })
+      // Why: a rejected listing is "unknown" — never close a pane on it.
+      .catch(() => {})
+  }
+
   return {
     syncProcessTracking() {
       agentCompletionCoordinator.startProcessTracking()
     },
+    // Why: re-arm the once-per-resume input re-check when the pane becomes
+    // visible again. Called from the lifecycle visibility effect; the gate
+    // keeps the typing hot path off the listSessions IPC between resumes.
+    noteVisibilityResume() {
+      livenessRecheckFiredSinceResume = false
+    },
+    reconcileIfSessionDead,
     dispose() {
       disposed = true
       if (terminalKeyTargetSupportsEvents) {

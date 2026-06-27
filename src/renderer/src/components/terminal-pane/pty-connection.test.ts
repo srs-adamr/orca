@@ -145,6 +145,7 @@ type MockTransport = {
   sendInputAccepted?: ReturnType<typeof vi.fn>
   resize: ReturnType<typeof vi.fn>
   getPtyId: ReturnType<typeof vi.fn>
+  getConnectionId: ReturnType<typeof vi.fn>
   serializeBuffer?: ReturnType<typeof vi.fn>
 }
 
@@ -276,6 +277,7 @@ function createMockTransport(initialPtyId: string | null = null): MockTransport 
     sendInput: vi.fn(() => true),
     resize: vi.fn(() => true),
     getPtyId: vi.fn(() => ptyId),
+    getConnectionId: vi.fn(() => null),
     serializeBuffer: undefined
   } as MockTransport
   const sendInput = transport.sendInput as unknown as (data: string) => boolean
@@ -580,6 +582,7 @@ describe('connectPanePty', () => {
         },
         pty: {
           signal: vi.fn(),
+          listSessions: vi.fn().mockResolvedValue([]),
           getMainBufferSnapshot: vi.fn().mockResolvedValue(null),
           getForegroundProcess: vi.fn().mockResolvedValue(null),
           hasChildProcesses: vi.fn().mockResolvedValue(false),
@@ -9477,5 +9480,294 @@ describe('connectPanePty', () => {
 
     expect(deps.setCacheTimerStartedAt).toHaveBeenCalledWith(makePaneKey('tab-1', LEAF_1), null)
     expect(mockStoreState.removeAgentStatus).not.toHaveBeenCalled()
+  })
+
+  describe('reconcileIfSessionDead', () => {
+    it('closes a split pane bound to a dead local session (same teardown as onExit)', async () => {
+      const { connectPanePty } = await import('./pty-connection')
+      const capturedDataCallback: { current: ((data: string) => void) | null } = { current: null }
+      const transport = createMockTransport('pty-pane-2')
+      transport.connect.mockImplementation(
+        async ({ callbacks }: { callbacks: ConnectCallbacks }) => {
+          capturedDataCallback.current = callbacks.onData ?? null
+          return 'pty-pane-2'
+        }
+      )
+      transportFactoryQueue.push(transport)
+      const manager = createManager(2)
+      const deps = createDeps({
+        restoredLeafId: LEAF_2,
+        paneTransportsRef: { current: new Map([[1, createMockTransport('pty-pane-1')]]) }
+      })
+
+      const binding = connectPanePty(createPane(2) as never, manager as never, deps as never)
+      // Why: clear the freshly-split early-return guard so onExit reaches the
+      // close branch, matching an established split pane the user has used.
+      capturedDataCallback.current?.('shell prompt')
+
+      binding.reconcileIfSessionDead(new Set(['pty-pane-1']))
+
+      expect(manager.closePane).toHaveBeenCalledWith(2)
+    })
+
+    it('routes the last pane through onPtyExitRef when its session is dead', async () => {
+      const { connectPanePty } = await import('./pty-connection')
+      const transport = createMockTransport('pty-pane-1')
+      transportFactoryQueue.push(transport)
+      const manager = createManager(1)
+      const deps = createDeps()
+
+      const binding = connectPanePty(createPane(1) as never, manager as never, deps as never)
+
+      // The last pane reattaches to the tab's persisted ptyId ('tab-pty').
+      binding.reconcileIfSessionDead(new Set(['some-other-live']))
+
+      expect(deps.onPtyExitRef.current).toHaveBeenCalledWith('tab-pty')
+      expect(manager.closePane).not.toHaveBeenCalled()
+    })
+
+    it('is a no-op when the bound session is still live', async () => {
+      const { connectPanePty } = await import('./pty-connection')
+      const transport = createMockTransport('pty-pane-2')
+      transportFactoryQueue.push(transport)
+      const manager = createManager(2)
+      const deps = createDeps({
+        restoredLeafId: LEAF_2,
+        paneTransportsRef: { current: new Map([[1, createMockTransport('pty-pane-1')]]) }
+      })
+
+      const binding = connectPanePty(createPane(2) as never, manager as never, deps as never)
+
+      binding.reconcileIfSessionDead(new Set(['pty-pane-1', 'pty-pane-2']))
+
+      expect(manager.closePane).not.toHaveBeenCalled()
+      expect(deps.onPtyExitRef.current).not.toHaveBeenCalled()
+    })
+
+    it('is a no-op for remote: web-runtime ids', async () => {
+      const { connectPanePty } = await import('./pty-connection')
+      enableActiveRuntimeEnvironment('env-1')
+      const transport = createMockTransport('remote:env-1:pane-2')
+      transport.getConnectionId.mockReturnValue(null)
+      transportFactoryQueue.push(transport)
+      const manager = createManager(2)
+      const deps = createDeps({
+        restoredLeafId: LEAF_2,
+        paneTransportsRef: { current: new Map([[1, createMockTransport('pty-pane-1')]]) }
+      })
+
+      const binding = connectPanePty(createPane(2) as never, manager as never, deps as never)
+
+      binding.reconcileIfSessionDead(new Set())
+
+      expect(manager.closePane).not.toHaveBeenCalled()
+      expect(deps.onPtyExitRef.current).not.toHaveBeenCalled()
+    })
+
+    it('is a no-op for SSH/non-local ids (non-null connectionId)', async () => {
+      const { connectPanePty } = await import('./pty-connection')
+      const transport = createMockTransport('pty-pane-2')
+      transport.getConnectionId.mockReturnValue('ssh-target-1')
+      transportFactoryQueue.push(transport)
+      const manager = createManager(2)
+      const deps = createDeps({
+        restoredLeafId: LEAF_2,
+        paneTransportsRef: { current: new Map([[1, createMockTransport('pty-pane-1')]]) }
+      })
+
+      const binding = connectPanePty(createPane(2) as never, manager as never, deps as never)
+
+      binding.reconcileIfSessionDead(new Set())
+
+      expect(manager.closePane).not.toHaveBeenCalled()
+      expect(deps.onPtyExitRef.current).not.toHaveBeenCalled()
+    })
+
+    it('respects suppression: a suppressed dead session keeps the pane mounted', async () => {
+      const { connectPanePty } = await import('./pty-connection')
+      const transport = createMockTransport('pty-pane-2')
+      transportFactoryQueue.push(transport)
+      const manager = createManager(2)
+      const deps = createDeps({
+        restoredLeafId: LEAF_2,
+        consumeSuppressedPtyExit: vi.fn(() => true),
+        paneTransportsRef: { current: new Map([[1, createMockTransport('pty-pane-1')]]) }
+      })
+
+      const binding = connectPanePty(createPane(2) as never, manager as never, deps as never)
+
+      binding.reconcileIfSessionDead(new Set(['pty-pane-1']))
+
+      expect(deps.consumeSuppressedPtyExit).toHaveBeenCalledWith('pty-pane-2')
+      expect(manager.closePane).not.toHaveBeenCalled()
+      expect(deps.onPtyExitRef.current).not.toHaveBeenCalled()
+    })
+
+    it('does not act on a stale id after a reattach changed the bound id', async () => {
+      const { connectPanePty } = await import('./pty-connection')
+      const transport = createMockTransport('pty-pane-2')
+      transportFactoryQueue.push(transport)
+      const manager = createManager(2)
+      const deps = createDeps({
+        restoredLeafId: LEAF_2,
+        paneTransportsRef: { current: new Map([[1, createMockTransport('pty-pane-1')]]) }
+      })
+
+      const binding = connectPanePty(createPane(2) as never, manager as never, deps as never)
+
+      // Reattach to a new live session between snapshot and apply: the snapshot
+      // marked the OLD id dead, but getPtyId now returns the new (live) id.
+      transport.getPtyId.mockReturnValue('pty-pane-2-reattached')
+      binding.reconcileIfSessionDead(new Set(['pty-pane-1', 'pty-pane-2-reattached']))
+
+      expect(manager.closePane).not.toHaveBeenCalled()
+      expect(deps.onPtyExitRef.current).not.toHaveBeenCalled()
+    })
+
+    it('closes a split pane exactly once across reconcile + a racing real exit', async () => {
+      const { connectPanePty } = await import('./pty-connection')
+      const capturedDataCallback: { current: ((data: string) => void) | null } = { current: null }
+      const transport = createMockTransport('pty-pane-2')
+      transport.connect.mockImplementation(
+        async ({ callbacks }: { callbacks: ConnectCallbacks }) => {
+          capturedDataCallback.current = callbacks.onData ?? null
+          return 'pty-pane-2'
+        }
+      )
+      transportFactoryQueue.push(transport)
+      const manager = createManager(2)
+      const deps = createDeps({
+        restoredLeafId: LEAF_2,
+        paneTransportsRef: { current: new Map([[1, createMockTransport('pty-pane-1')]]) }
+      })
+
+      const binding = connectPanePty(createPane(2) as never, manager as never, deps as never)
+      capturedDataCallback.current?.('shell prompt')
+      const onPtyExit = createdTransportOptions[0]?.onPtyExit as
+        | ((ptyId: string) => void)
+        | undefined
+      expect(onPtyExit).toBeTypeOf('function')
+
+      binding.reconcileIfSessionDead(new Set(['pty-pane-1']))
+      // A racing real/synthetic pty:exit for the SAME id must not close twice.
+      onPtyExit?.('pty-pane-2')
+
+      expect(manager.closePane).toHaveBeenCalledTimes(1)
+      expect(manager.closePane).toHaveBeenCalledWith(2)
+    })
+
+    it('closes a genuinely-dead non-suppressed pane once (not misread as suppressed)', async () => {
+      const { connectPanePty } = await import('./pty-connection')
+      const capturedDataCallback: { current: ((data: string) => void) | null } = { current: null }
+      const transport = createMockTransport('pty-pane-2')
+      transport.connect.mockImplementation(
+        async ({ callbacks }: { callbacks: ConnectCallbacks }) => {
+          capturedDataCallback.current = callbacks.onData ?? null
+          return 'pty-pane-2'
+        }
+      )
+      transportFactoryQueue.push(transport)
+      const manager = createManager(2)
+      // consumeSuppressedPtyExit always returns false for this genuinely-dead id.
+      const deps = createDeps({
+        restoredLeafId: LEAF_2,
+        consumeSuppressedPtyExit: vi.fn(() => false),
+        paneTransportsRef: { current: new Map([[1, createMockTransport('pty-pane-1')]]) }
+      })
+
+      const binding = connectPanePty(createPane(2) as never, manager as never, deps as never)
+      capturedDataCallback.current?.('shell prompt')
+      const onPtyExit = createdTransportOptions[0]?.onPtyExit as
+        | ((ptyId: string) => void)
+        | undefined
+
+      binding.reconcileIfSessionDead(new Set(['pty-pane-1']))
+      onPtyExit?.('pty-pane-2')
+
+      // Observable outcome: single close, pane was treated as dead (closed).
+      expect(manager.closePane).toHaveBeenCalledTimes(1)
+      expect(manager.closePane).toHaveBeenCalledWith(2)
+    })
+  })
+
+  describe('input liveness re-check IPC gating (perf)', () => {
+    // Why (perf regression guard): listSessions() is a renderer→main→daemon
+    // round-trip. The input-driven liveness re-check must fire at most once per
+    // resume window, never once per keystroke, or every healthy local pane puts
+    // a process-enumeration round-trip on the typing hot path.
+    async function connectActivePaneWithInput(): Promise<{
+      binding: { noteVisibilityResume: () => void }
+      typeKeystroke: (data?: string) => void
+    }> {
+      const { connectPanePty } = await import('./pty-connection')
+      const transport = createMockTransport('pty-pane-2')
+      transportFactoryQueue.push(transport)
+      const manager = createManager(2)
+      const deps = createDeps({
+        restoredLeafId: LEAF_2,
+        paneTransportsRef: { current: new Map([[1, createMockTransport('pty-pane-1')]]) }
+      })
+      const pane = createPane(2)
+      const binding = connectPanePty(pane as never, manager as never, deps as never) as unknown as {
+        noteVisibilityResume: () => void
+      }
+      return {
+        binding,
+        // Drives the real xterm onData (terminal input) handler.
+        typeKeystroke: (data = 'a') => sendTerminalInputThroughPane(pane, data)
+      }
+    }
+
+    it('fires listSessions at most once across many keystrokes in one resume window', async () => {
+      const listSessions = vi.mocked(window.api.pty.listSessions)
+      listSessions.mockClear()
+      const { typeKeystroke } = await connectActivePaneWithInput()
+
+      for (let i = 0; i < 25; i++) {
+        typeKeystroke('x')
+      }
+
+      expect(listSessions).toHaveBeenCalledTimes(1)
+    })
+
+    it('re-arms one re-check after a visibility resume', async () => {
+      const listSessions = vi.mocked(window.api.pty.listSessions)
+      listSessions.mockClear()
+      const { binding, typeKeystroke } = await connectActivePaneWithInput()
+
+      typeKeystroke('a')
+      typeKeystroke('b')
+      expect(listSessions).toHaveBeenCalledTimes(1)
+
+      // Resume re-arms exactly one more re-check.
+      binding.noteVisibilityResume()
+      typeKeystroke('c')
+      typeKeystroke('d')
+      expect(listSessions).toHaveBeenCalledTimes(2)
+    })
+
+    it('never fires listSessions for a remote: web-runtime pane (liveness owned by host snapshot)', async () => {
+      const listSessions = vi.mocked(window.api.pty.listSessions)
+      listSessions.mockClear()
+      const { connectPanePty } = await import('./pty-connection')
+      // Remote panes report a null connectionId but a remote:-prefixed ptyId, so
+      // the SSH/connectionId guard alone would not exclude them — the remote
+      // prefix guard must.
+      const transport = createMockTransport('remote:env-1@@terminal-2')
+      transport.getConnectionId.mockReturnValue(null)
+      transportFactoryQueue.push(transport)
+      const manager = createManager(2)
+      const deps = createDeps({
+        restoredLeafId: LEAF_2,
+        paneTransportsRef: { current: new Map([[1, createMockTransport('pty-pane-1')]]) }
+      })
+      const pane = createPane(2)
+      connectPanePty(pane as never, manager as never, deps as never)
+
+      sendTerminalInputThroughPane(pane, 'x')
+      sendTerminalInputThroughPane(pane, 'y')
+
+      expect(listSessions).not.toHaveBeenCalled()
+    })
   })
 })
