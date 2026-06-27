@@ -2267,8 +2267,13 @@ export default function TerminalPane({
     async (pane: ManagedPane, ptyId: string): Promise<void> => {
       // Why: local and remote runtime PTYs use different transports, but the
       // desktop reclaim button should have one visible recovery behavior.
-      // Why: the banner was rendered for this PTY; re-reading pane transport
-      // after a mobile disconnect race can restore a recycled pane instead.
+      // Why: the banner was rendered for this PTY; stale portals must disappear
+      // before they can reclaim a different terminal that reused this pane slot.
+      const currentPtyId = paneTransportsRef.current.get(pane.id)?.getPtyId() ?? null
+      if (currentPtyId !== ptyId) {
+        setOverrideTick((n) => n + 1)
+        return
+      }
       const restored = await restoreTerminalFitToDesktop(ptyId, settingsRef.current ?? undefined)
       if (restored) {
         scheduleRestoredTerminalRefit()
