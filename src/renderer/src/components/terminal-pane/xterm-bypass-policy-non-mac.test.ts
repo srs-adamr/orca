@@ -181,23 +181,44 @@ describe('shouldSuppressTerminalImeKeyboardEvent — Windows/Linux', () => {
     ).toBe(false)
   })
 
-  it('suppresses IME-owned editing keys while composition is active', () => {
+  it('does NOT suppress IME-owned editing keys on non-Mac (no CJK input-source gate)', () => {
+    // Why: the CJK input-source tracker is Mac-only and is null on Windows/Linux,
+    // so isCjkCompositionActive is always false here. The candidate-window
+    // swallow therefore never fires; inline composition keys reach xterm. The
+    // Windows IME Process-key path (keyCode 229) still covers active preedit.
+    for (const key of ['Backspace', 'Enter', 'ArrowDown']) {
+      expect(
+        shouldSuppressTerminalImeKeyboardEvent(event({ key, code: key }), {
+          compositionActive: true,
+          isCjkCompositionActive: false
+        })
+      ).toBe(false)
+    }
+  })
+
+  it('still suppresses universal Chromium IME signals regardless of CJK gate', () => {
     expect(
-      shouldSuppressTerminalImeKeyboardEvent(event({ key: 'Backspace', code: 'Backspace' }), {
-        compositionActive: true
+      shouldSuppressTerminalImeKeyboardEvent(event({ key: 'Backspace', isComposing: true }), {
+        compositionActive: false,
+        isCjkCompositionActive: false
       })
     ).toBe(true)
     expect(
-      shouldSuppressTerminalImeKeyboardEvent(event({ key: 'ArrowDown', code: 'ArrowDown' }), {
-        compositionActive: true
-      })
+      shouldSuppressTerminalImeKeyboardEvent(
+        event({ key: 'Process', code: 'KeyN', keyCode: 229 }),
+        {
+          compositionActive: true,
+          isCjkCompositionActive: false
+        }
+      )
     ).toBe(true)
   })
 
   it('does not suppress ordinary text keys solely because composition is active', () => {
     expect(
       shouldSuppressTerminalImeKeyboardEvent(event({ key: 'a', code: 'KeyA' }), {
-        compositionActive: true
+        compositionActive: true,
+        isCjkCompositionActive: false
       })
     ).toBe(false)
   })
