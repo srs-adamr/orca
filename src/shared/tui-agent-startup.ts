@@ -5,6 +5,7 @@ import {
   type ResumableTuiAgent,
   type SleepingAgentLaunchConfig
 } from './agent-session-resume'
+import { maybeWrapCodexStartupRetry } from './codex-startup-retry'
 import {
   clearEnvCommand,
   commandSeparator,
@@ -98,7 +99,7 @@ export function buildAgentStartupPlan(args: {
     }
     return {
       agent,
-      launchCommand: baseCommand.command,
+      launchCommand: maybeWrapCodexStartupRetry(agent, baseCommand.command, shell),
       expectedProcess: config.expectedProcess,
       followupPrompt: null,
       launchConfig,
@@ -109,9 +110,10 @@ export function buildAgentStartupPlan(args: {
   const quotedPrompt = quoteStartupArg(trimmedPrompt, shell)
 
   if (config.promptInjectionMode === 'argv') {
+    const launchCommand = `${baseCommand.command} ${quotedPrompt}`
     return {
       agent,
-      launchCommand: `${baseCommand.command} ${quotedPrompt}`,
+      launchCommand: maybeWrapCodexStartupRetry(agent, launchCommand, shell),
       expectedProcess: config.expectedProcess,
       followupPrompt: null,
       launchConfig,
@@ -203,7 +205,7 @@ export function buildAgentResumeStartupPlan(args: {
   const launchCommand = resumeArgs ? `${baseCommand.command} ${resumeArgs}` : baseCommand.command
   return {
     agent: args.agent,
-    launchCommand,
+    launchCommand: maybeWrapCodexStartupRetry(args.agent, launchCommand, shell),
     expectedProcess: config.expectedProcess,
     followupPrompt: null,
     launchConfig,
@@ -291,7 +293,11 @@ export function buildAgentDraftLaunchPlan(args: {
   if (!plan || !inlineDraftPlanFitsPlatform(plan, platform)) {
     return null
   }
-  return plan
+  const wrappedPlan = {
+    ...plan,
+    launchCommand: maybeWrapCodexStartupRetry(agent, plan.launchCommand, shell)
+  }
+  return inlineDraftPlanFitsPlatform(wrappedPlan, platform) ? wrappedPlan : null
 }
 
 export { isShellProcess }
