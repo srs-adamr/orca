@@ -3,6 +3,7 @@
  * completion bookkeeping, and focus restoration. */
 import { useEffect } from 'react'
 import { launchAgentBackgroundSession } from '@/lib/launch-agent-background-session'
+import { runAutomationWorktreeSetup } from '@/lib/run-automation-worktree-setup'
 import { submitPromptToAgentPty } from '@/lib/agent-paste-draft'
 import { findReusableAutomationSession } from '@/lib/automation-session-reuse'
 import { observeExistingAutomationSession } from '@/lib/automation-session-observer'
@@ -173,50 +174,54 @@ export function useAutomationDispatchEvents(): void {
           }
 
           const automationWorkspaceCreateRequestId = createBrowserUuid()
-          const worktree =
+          // Why: capture the full new_per_run create result so we can run its
+          // setup runner before launching the agent (issue #5918).
+          const createdWorktree =
             automation.workspaceMode === 'new_per_run'
-              ? (
-                  await useAppStore
-                    .getState()
-                    .createWorktree(
-                      runRepoId,
-                      buildAutomationWorkspaceName(run.title, run.scheduledFor),
-                      automation.baseBranch ?? undefined,
-                      'inherit',
-                      undefined,
-                      'unknown',
-                      run.title,
-                      undefined,
-                      undefined,
-                      undefined,
-                      automation.agentId,
-                      undefined,
-                      undefined,
-                      undefined,
-                      undefined,
-                      undefined,
-                      undefined,
-                      undefined,
-                      undefined,
-                      undefined,
-                      undefined,
-                      undefined,
-                      undefined,
-                      undefined,
-                      undefined,
-                      {
-                        automationProvenanceRequest: {
-                          automationId: automation.id,
-                          automationRunId: run.id,
-                          dispatchToken,
-                          createRequestId: automationWorkspaceCreateRequestId
-                        }
+              ? await useAppStore
+                  .getState()
+                  .createWorktree(
+                    runRepoId,
+                    buildAutomationWorkspaceName(run.title, run.scheduledFor),
+                    automation.baseBranch ?? undefined,
+                    'inherit',
+                    undefined,
+                    'unknown',
+                    run.title,
+                    undefined,
+                    undefined,
+                    undefined,
+                    automation.agentId,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    {
+                      automationProvenanceRequest: {
+                        automationId: automation.id,
+                        automationRunId: run.id,
+                        dispatchToken,
+                        createRequestId: automationWorkspaceCreateRequestId
                       }
-                    )
-                ).worktree
-              : automation.workspaceId
-                ? automationWorktree
-                : null
+                    }
+                  )
+              : null
+          const createdWorktreeSetup = createdWorktree?.setup
+          const worktree = createdWorktree
+            ? createdWorktree.worktree
+            : automation.workspaceId
+              ? automationWorktree
+              : null
 
           if (!worktree) {
             await markDispatchResult({
@@ -233,6 +238,15 @@ export function useAutomationDispatchEvents(): void {
           }
           dispatchWorkspaceId = worktree.id
           dispatchWorkspaceDisplayName = worktree.displayName
+
+          // Why: a freshly-created automation worktree must run its setup runner
+          // (gitignored config/skills/.env) and finish BEFORE the agent launches,
+          // since background automations never reveal the Setup tab that manual
+          // creation relies on to spawn it (issue #5918). Existing workspaces
+          // already ran setup at their original creation, so only do this here.
+          if (automation.workspaceMode === 'new_per_run' && createdWorktreeSetup) {
+            await runAutomationWorktreeSetup(createdWorktreeSetup, worktree.id)
+          }
 
           const outputSnapshotBuffer = createAutomationRunOutputSnapshotBuffer()
           let latestAssistantMessage: string | null = null
