@@ -2551,6 +2551,121 @@ describe('createMainWindow', () => {
     consoleError.mockRestore()
   })
 
+  // Why (#5787): a renderer hung on heavy output is alive but never emits a
+  // crash 'reason', so it gets no recovery path — the user's only escape was the
+  // destructive OS force-close. Reload it gracefully so live sessions (PTYs in
+  // main) survive instead of cascading closed.
+  it('reloads the app document after a hung renderer stays unresponsive', () => {
+    vi.useFakeTimers()
+
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { browserWindowInstance, windowHandlers } = createRendererRecoveryWindowHarness()
+
+    createMainWindow(null)
+    expect(browserWindowInstance.loadFile).toHaveBeenCalledTimes(1)
+
+    windowHandlers.unresponsive?.()
+    vi.advanceTimersByTime(8_000)
+
+    expect(browserWindowInstance.loadFile).toHaveBeenCalledTimes(2)
+    expect(browserWindowInstance.loadURL).not.toHaveBeenCalled()
+
+    consoleWarn.mockRestore()
+  })
+
+  it('cancels hung-renderer recovery when the renderer becomes responsive again', () => {
+    vi.useFakeTimers()
+
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { browserWindowInstance, windowHandlers } = createRendererRecoveryWindowHarness()
+
+    createMainWindow(null)
+
+    windowHandlers.unresponsive?.()
+    windowHandlers.responsive?.()
+    vi.advanceTimersByTime(8_000)
+
+    // Only the initial load — the recovery reload was cancelled.
+    expect(browserWindowInstance.loadFile).toHaveBeenCalledTimes(1)
+
+    consoleWarn.mockRestore()
+  })
+
+  it('does not schedule hung-renderer recovery while quitting', () => {
+    vi.useFakeTimers()
+
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const { browserWindowInstance, windowHandlers } = createRendererRecoveryWindowHarness()
+
+    createMainWindow(null, { getIsQuitting: () => true })
+
+    windowHandlers.unresponsive?.()
+    vi.advanceTimersByTime(8_000)
+
+    expect(browserWindowInstance.loadFile).toHaveBeenCalledTimes(1)
+
+    consoleWarn.mockRestore()
+  })
+
+  // Why (#5787): the data-loss cascade. A renderer that went unresponsive but is
+  // still alive (not gone, not crashed) MUST still route a close through the
+  // renderer's save/running-process confirmation — bypassing it is what lost the
+  // other project's sessions when the user force-closed the frozen window.
+  it('still requests close confirmation for a hung-but-alive renderer', () => {
+    vi.useFakeTimers()
+
+    const consoleWarn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    const windowHandlers: Record<string, (...args: any[]) => void> = {}
+    const webContents = {
+      id: 77,
+      on: vi.fn((event, handler) => {
+        windowHandlers[event] = handler
+      }),
+      setZoomLevel: vi.fn(),
+      setBackgroundThrottling: vi.fn(),
+      invalidate: vi.fn(),
+      setWindowOpenHandler: vi.fn(),
+      send: vi.fn(),
+      // Why: a hung renderer is NOT crashed — isCrashed() must report false so
+      // the close path cannot mistake the hang for an unrecoverable crash.
+      isCrashed: vi.fn(() => false)
+    }
+    const browserWindowInstance = {
+      webContents,
+      on: vi.fn((event, handler) => {
+        windowHandlers[event] = handler
+      }),
+      isDestroyed: vi.fn(() => false),
+      isMaximized: vi.fn(() => true),
+      isFullScreen: vi.fn(() => false),
+      getSize: vi.fn(() => [1200, 800]),
+      setSize: vi.fn(),
+      maximize: vi.fn(),
+      show: vi.fn(),
+      loadFile: vi.fn(),
+      loadURL: vi.fn()
+    }
+    browserWindowMock.mockImplementation(function () {
+      return browserWindowInstance
+    })
+
+    createMainWindow(null, { getIsQuitting: () => false })
+
+    // Renderer hangs, then the user closes the frozen window BEFORE the grace
+    // recovery fires (and before any crash/process-gone event).
+    windowHandlers.unresponsive?.()
+    const preventDefault = vi.fn()
+    windowHandlers.close({ preventDefault } as never)
+
+    // The close must be vetoed and the renderer asked to confirm — NOT bypassed.
+    expect(preventDefault).toHaveBeenCalledTimes(1)
+    expect(webContents.send).toHaveBeenCalledWith('window:close-requested', {
+      isQuitting: false
+    })
+
+    consoleWarn.mockRestore()
+  })
+
   it('ignores duplicate ready-to-show events after startup maximize has already run', () => {
     const windowHandlers: Record<string, (...args: any[]) => void> = {}
     const webContents = {

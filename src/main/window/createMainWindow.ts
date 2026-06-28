@@ -42,6 +42,7 @@ import {
 import { getMainE2EConfig } from '../e2e-config'
 import { buildEditableContextMenuTemplate } from './editable-context-menu'
 import { clearTrustedUIRendererWebContentsId, setTrustedUIRendererWebContentsId } from '../ipc/ui'
+import { resolveWindowCloseAction } from './window-close-decision'
 
 function forceRepaint(window: BrowserWindow): void {
   if (window.isDestroyed()) {
@@ -101,6 +102,11 @@ const TRAFFIC_LIGHT_RADIUS = 6
 const TRAFFIC_LIGHT_X = 16
 const MIN_WIDTH = 600
 const MIN_HEIGHT = 400
+// Why (#5787): grace period before a hung-but-alive renderer is reloaded. Long
+// enough that a transient heavy-output flood can clear (and emit 'responsive')
+// without losing renderer state, short enough to rescue the user before they
+// reach for the destructive OS "not responding" force-close.
+const UNRESPONSIVE_RECOVERY_DELAY_MS = 8_000
 
 function syncTrafficLightPosition(win: BrowserWindow, zoomFactor: number): void {
   if (process.platform !== 'darwin' || win.isDestroyed()) {
@@ -618,6 +624,37 @@ export function createMainWindow(
       rendererRecoveryTimer = null
     }
   }
+  // Why (#5787): a hung-but-alive renderer needs a longer grace window than a
+  // crash recovery — a transient output flood often resolves on its own, and
+  // reloading mid-flood would needlessly discard renderer state. Wait before
+  // forcing a reload so 'responsive' can cancel it first.
+  let unresponsiveRecoveryTimer: ReturnType<typeof setTimeout> | null = null
+  const clearUnresponsiveRecoveryTimer = (): void => {
+    if (unresponsiveRecoveryTimer) {
+      clearTimeout(unresponsiveRecoveryTimer)
+      unresponsiveRecoveryTimer = null
+    }
+  }
+  const scheduleUnresponsiveRecovery = (): void => {
+    if (unresponsiveRecoveryTimer) {
+      return
+    }
+    unresponsiveRecoveryTimer = setTimeout(() => {
+      unresponsiveRecoveryTimer = null
+      // Why: re-check at fire time — 'responsive' clears the timer, but a close/
+      // quit/process-gone can still race in during the grace window.
+      if (
+        rendererProcessGone ||
+        windowClosing ||
+        opts?.getIsQuitting?.() ||
+        mainWindow.isDestroyed()
+      ) {
+        return
+      }
+      console.warn('[window] Renderer still unresponsive; reloading app document to recover')
+      loadMainWindow(mainWindow)
+    }, UNRESPONSIVE_RECOVERY_DELAY_MS)
+  }
   const scheduleRendererRecovery = (details: Electron.RenderProcessGoneDetails): void => {
     if (
       rendererRecoveryTimer ||
@@ -648,6 +685,7 @@ export function createMainWindow(
   }
   mainWindow.webContents.on('render-process-gone', (_event, details) => {
     rendererProcessGone = true
+    clearUnresponsiveRecoveryTimer()
     resetMarkdownEditorFocus()
     resetTerminalInputFocus()
     resetFloatingTerminalInputFocus()
@@ -664,6 +702,28 @@ export function createMainWindow(
       console.error('[window] Renderer process gone; close confirmation will be bypassed', details)
     }
     scheduleRendererRecovery(details)
+  })
+  // Why (#5787): a renderer hung on a heavy-output flood is still alive — it
+  // gets no crash 'reason', so scheduleRendererRecovery never fires for it. With
+  // no graceful path, the user's only escape was the OS "not responding" dialog,
+  // whose force-kill then bypassed the multi-session save guard and cascaded
+  // other sessions closed. Detect the hang and reload the app document once
+  // after a grace period so the user gets a usable window WITHOUT force-closing.
+  // 'responsive' cancels the pending recovery if the renderer recovers on its own.
+  mainWindow.webContents.on('unresponsive', () => {
+    if (
+      rendererProcessGone ||
+      windowClosing ||
+      opts?.getIsQuitting?.() ||
+      mainWindow.isDestroyed()
+    ) {
+      return
+    }
+    console.warn('[window] Renderer unresponsive; scheduling graceful recovery reload')
+    scheduleUnresponsiveRecovery()
+  })
+  mainWindow.webContents.on('responsive', () => {
+    clearUnresponsiveRecoveryTimer()
   })
   mainWindow.webContents.on('destroyed', () => {
     resetMarkdownEditorFocus()
@@ -682,6 +742,9 @@ export function createMainWindow(
   mainWindow.webContents.on('did-finish-load', () => {
     rendererProcessGone = false
     clearRendererRecoveryTimer()
+    // Why (#5787): a fresh load means the renderer is healthy again; drop any
+    // pending hung-renderer recovery so it can't reload a now-good document.
+    clearUnresponsiveRecoveryTimer()
   })
 
   const doubleTapDetector = new ModifierDoubleTapDetector()
@@ -1000,24 +1063,24 @@ export function createMainWindow(
       return
     }
     const isRendererCrashed = mainWindow.webContents.isCrashed?.() ?? false
-    if (windowCloseConfirmed) {
+    // Why: a force-killed HUNG renderer must keep the save/running-process guard
+    // (#5787). Only a genuinely gone/crashed renderer — which cannot answer
+    // window:close-requested — may bypass it. The unresponsive flag alone never
+    // bypasses; it routes through 'request-confirmation' below.
+    const closeAction = resolveWindowCloseAction({
+      windowCloseConfirmed,
+      rendererProcessGone,
+      isRendererCrashed
+    })
+    if (closeAction === 'allow-confirmed' || closeAction === 'bypass-gone') {
       windowCloseConfirmed = false
       // Why: past this point Electron/OS may emit resize/move/unmaximize as
       // the window is destroyed. Freeze bounds persistence so those
       // teardown events can't clobber the user's saved window size — which
       // would otherwise make the post-update relaunch come up at minWidth ×
-      // minHeight (issue surfaced in v1.3.26-rc2).
-      windowClosing = true
-      if (boundsTimer) {
-        clearTimeout(boundsTimer)
-        boundsTimer = null
-      }
-      return
-    }
-    if (rendererProcessGone || isRendererCrashed) {
-      // Why: after a native renderer crash the renderer cannot answer
-      // window:close-requested. Let Cmd+Q / OS close complete instead of
-      // trapping the user in a blank, unquittable window.
+      // minHeight (issue surfaced in v1.3.26-rc2). For a gone/crashed renderer
+      // this also lets Cmd+Q / OS close complete instead of trapping the user
+      // in a blank, unquittable window.
       windowClosing = true
       if (boundsTimer) {
         clearTimeout(boundsTimer)
@@ -1125,6 +1188,7 @@ export function createMainWindow(
     floatingTerminalInputFocused = false
     shortcutRecorderFocused = false
     clearRendererRecoveryTimer()
+    clearUnresponsiveRecoveryTimer()
     ipcMain.removeListener(trafficLightChannel, onSyncTrafficLights)
     ipcMain.removeListener(minimizeChannel, onMinimize)
     ipcMain.removeListener(maximizeChannel, onMaximize)
