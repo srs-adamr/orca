@@ -172,7 +172,7 @@ export function ExternalAutomationManagers({
                 return (
                   <div
                     key={job.id}
-                    className="grid grid-cols-[minmax(0,1fr)_minmax(8rem,auto)_auto] items-center gap-3 px-3 py-2 text-sm"
+                    className="relative grid grid-cols-[minmax(0,1fr)_minmax(8rem,auto)_auto] items-center gap-3 px-3 py-2 text-sm"
                   >
                     <div className="min-w-0">
                       <div className="flex min-w-0 items-center gap-2">
@@ -195,8 +195,9 @@ export function ExternalAutomationManagers({
                         </Badge>
                         <Tooltip>
                           <TooltipTrigger asChild>
-                            {/* ml-auto pins the toggle to the far right of the title line. */}
-                            <span className="ml-auto inline-flex shrink-0 items-center gap-1.5">
+                            {/* Absolutely pinned to the row's top-right corner (above the action
+                                icons) so it reaches the true right edge, not just the grid column. */}
+                            <span className="absolute right-3 top-2 inline-flex shrink-0 items-center gap-1.5">
                               {/* Match either key: job.enabled flips mid-flight, so a single-action
                                   match would drop the spinner a render early. */}
                               {runningActionKey === actionKey(manager, job, 'pause') ||
