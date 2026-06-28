@@ -1,7 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
   applyTerminalScrollbackRowsToMountedPanes,
+  clearQueuedInitialCwdAfterFirstPane,
   mapRestoredPaneTitlesByPaneId,
+  resolvePaneLinkCwd,
+  resolvePaneSeedCwd,
+  resolveQueuedInitialCwd,
   scheduleVisibilityReconcilePass,
   shouldDetachPaneTransportOnUnmount,
   splitPaneWithOneShotStartup,
@@ -190,6 +194,76 @@ describe('mapRestoredPaneTitlesByPaneId', () => {
         new Map([['11111111-1111-4111-8111-111111111111', 2]])
       )
     ).toEqual({ 2: 'build logs' })
+  })
+})
+
+describe('resolveQueuedInitialCwd', () => {
+  it('consumes the queued initial cwd once when the ref is unset', () => {
+    const consumeTabInitialCwd = vi.fn(() => '/repo/packages/web')
+
+    expect(resolveQueuedInitialCwd(undefined, consumeTabInitialCwd, '/repo')).toEqual({
+      queuedInitialCwd: '/repo/packages/web',
+      startupCwd: '/repo/packages/web'
+    })
+    expect(consumeTabInitialCwd).toHaveBeenCalledTimes(1)
+  })
+
+  it('reuses the existing queued state without re-reading the store', () => {
+    const consumeTabInitialCwd = vi.fn(() => '/repo/packages/web')
+
+    expect(resolveQueuedInitialCwd(null, consumeTabInitialCwd, '/repo')).toEqual({
+      queuedInitialCwd: null,
+      startupCwd: '/repo'
+    })
+    expect(resolveQueuedInitialCwd('/repo/packages/web', consumeTabInitialCwd, '/repo')).toEqual({
+      queuedInitialCwd: '/repo/packages/web',
+      startupCwd: '/repo/packages/web'
+    })
+    expect(consumeTabInitialCwd).not.toHaveBeenCalled()
+  })
+})
+
+describe('clearQueuedInitialCwdAfterFirstPane', () => {
+  it('clears the one-shot cwd and restores the default cwd after the first pane', () => {
+    expect(
+      clearQueuedInitialCwdAfterFirstPane('/repo/packages/web', '/repo', '/repo/packages/web')
+    ).toEqual({
+      queuedInitialCwd: null,
+      ptyCwd: '/repo'
+    })
+  })
+
+  it('leaves the cwd unchanged when no one-shot override is queued', () => {
+    expect(clearQueuedInitialCwdAfterFirstPane(null, '/repo', '/repo')).toEqual({
+      queuedInitialCwd: null,
+      ptyCwd: '/repo'
+    })
+  })
+})
+
+describe('resolvePaneLinkCwd', () => {
+  it('prefers the pane-specific cwd when one has been seeded or confirmed', () => {
+    expect(
+      resolvePaneLinkCwd(
+        new Map([[2, { cwd: '/repo/packages/web', confirmed: false }]]),
+        2,
+        '/repo'
+      )
+    ).toBe('/repo/packages/web')
+  })
+
+  it('falls back to the lifecycle startup cwd when the pane has no cached cwd yet', () => {
+    expect(resolvePaneLinkCwd(new Map(), 2, '/repo')).toBe('/repo')
+  })
+})
+
+describe('resolvePaneSeedCwd', () => {
+  it('prefers the inherited split cwd before OSC 7 confirms the pane cwd', () => {
+    expect(resolvePaneSeedCwd('/repo/packages/web', '/repo')).toBe('/repo/packages/web')
+  })
+
+  it('falls back to the lifecycle cwd when the pane has no split override', () => {
+    expect(resolvePaneSeedCwd(undefined, '/repo')).toBe('/repo')
   })
 })
 

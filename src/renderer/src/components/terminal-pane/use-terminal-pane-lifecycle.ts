@@ -318,6 +318,42 @@ function hydrateTerminalScrollbackRefs(layout: TerminalLayoutSnapshot): {
     : { layout, hydrated }
 }
 
+export function resolveQueuedInitialCwd(
+  queuedInitialCwd: string | null | undefined,
+  consumeTabInitialCwd: () => string | null,
+  defaultTabCwd: string
+): { queuedInitialCwd: string | null; startupCwd: string } {
+  const nextQueuedInitialCwd =
+    queuedInitialCwd === undefined ? consumeTabInitialCwd() : queuedInitialCwd
+  return {
+    queuedInitialCwd: nextQueuedInitialCwd,
+    startupCwd: nextQueuedInitialCwd ?? defaultTabCwd
+  }
+}
+
+export function clearQueuedInitialCwdAfterFirstPane(
+  queuedInitialCwd: string | null | undefined,
+  defaultTabCwd: string,
+  currentPtyCwd: string
+): { queuedInitialCwd: string | null | undefined; ptyCwd: string } {
+  if (!queuedInitialCwd) {
+    return { queuedInitialCwd, ptyCwd: currentPtyCwd }
+  }
+  return { queuedInitialCwd: null, ptyCwd: defaultTabCwd }
+}
+
+export function resolvePaneLinkCwd(
+  paneCwdMap: PaneCwdMap,
+  paneId: number,
+  fallbackCwd: string
+): string {
+  return paneCwdMap.get(paneId)?.cwd ?? fallbackCwd
+}
+
+export function resolvePaneSeedCwd(splitPaneCwd: string | undefined, fallbackCwd: string): string {
+  return splitPaneCwd ?? fallbackCwd
+}
+
 type SplitStartupPayload = { command: string; env?: Record<string, string> }
 
 type SplitWithStartupDeps = {
@@ -474,6 +510,7 @@ export function useTerminalPaneLifecycle({
   const mouseHideDisposablesRef = useRef(new Map<number, IDisposable>())
   const imeCompositionDisposablesRef = useRef(new Map<number, IDisposable>())
   const imePunctuationForwarderDisposablesRef = useRef(new Map<number, IDisposable>())
+  const queuedInitialCwdRef = useRef<string | null | undefined>(undefined)
 
   const applyAppearance = (manager: PaneManager): void => {
     const currentSettings = settingsRef.current
@@ -548,8 +585,17 @@ export function useTerminalPaneLifecycle({
         .find((candidate) => candidate.id === worktreeId)?.path ??
       cwd ??
       ''
-    const startupCwd = cwd ?? worktreePath
+    const defaultTabCwd = cwd ?? worktreePath
+    const initialCwdResolution = resolveQueuedInitialCwd(
+      queuedInitialCwdRef.current,
+      () => useAppStore.getState().consumeTabInitialCwd(tabId),
+      defaultTabCwd
+    )
+    queuedInitialCwdRef.current = initialCwdResolution.queuedInitialCwd
+    const startupCwd = initialCwdResolution.startupCwd
     const terminalHomePath = resolveTerminalHomePathFromEnv(startup?.env)
+    const getPaneLinkCwd = (paneId: number): string =>
+      resolvePaneLinkCwd(paneCwdRef.current, paneId, startupCwd)
     // Why: existence probes can cross SSH/runtime boundaries. This cache is
     // lifecycle-scoped, so external mutations and the initial 'active' runtime
     // fallback can temporarily leave stale entries.
@@ -558,6 +604,7 @@ export function useTerminalPaneLifecycle({
       worktreeId,
       worktreePath,
       startupCwd,
+      getPaneLinkCwd,
       terminalHomePath,
       managerRef,
       linkProviderDisposablesRef,
@@ -617,7 +664,7 @@ export function useTerminalPaneLifecycle({
     const ptyDeps = {
       tabId,
       worktreeId,
-      cwd,
+      cwd: startupCwd,
       startup,
       paneTransportsRef,
       paneMode2031Ref,
@@ -657,7 +704,7 @@ export function useTerminalPaneLifecycle({
 
     const fileOpenLinkHint = getTerminalFileOpenHint()
     const urlOpenLinkHint = getTerminalUrlOpenHint()
-    const osc7UncHost = extractUncHost(cwd)
+    const osc7UncHost = extractUncHost(startupCwd)
 
     let releaseWebviewDragPassthrough: (() => void) | null = null
 
@@ -710,6 +757,12 @@ export function useTerminalPaneLifecycle({
         // Return true so xterm marks the sequence handled. If a future
         // consumer registers on code 7, registration order decides who sees
         // each sequence.
+        if (!paneCwdRef.current.has(pane.id)) {
+          paneCwdRef.current.set(pane.id, {
+            cwd: resolvePaneSeedCwd(spawnHints?.cwd, ptyDeps.cwd),
+            confirmed: false
+          })
+        }
         const osc7Disposable = pane.terminal.parser.registerOscHandler(7, (data) => {
           const parsedCwd = parseOsc7(data, { uncHost: osc7UncHost })
           if (parsedCwd) {
@@ -917,6 +970,7 @@ export function useTerminalPaneLifecycle({
           activate: (event, text) => {
             handleOscLink(text, event as MouseEvent | undefined, {
               ...linkDeps,
+              startupCwd: getPaneLinkCwd(pane.id),
               runtimeEnvironmentId: linkDeps.getRuntimeEnvironmentIdForPane?.(pane.id) ?? null,
               requestOpenLinksInAppPreference
             })
@@ -968,6 +1022,13 @@ export function useTerminalPaneLifecycle({
         // sets deps.startup immediately before splitPane() and is therefore
         // unaffected by this clear.
         ptyDeps.startup = null
+        const nextInitialCwdState = clearQueuedInitialCwdAfterFirstPane(
+          queuedInitialCwdRef.current,
+          defaultTabCwd,
+          ptyDeps.cwd
+        )
+        queuedInitialCwdRef.current = nextInitialCwdState.queuedInitialCwd
+        ptyDeps.cwd = nextInitialCwdState.ptyCwd
         panePtyBindings.set(pane.id, panePtyBinding)
         syncPaneCount()
         scheduleRuntimeGraphSync()
@@ -1221,6 +1282,7 @@ export function useTerminalPaneLifecycle({
         const activePane = managerRef.current?.getActivePane()
         void handleOscLink(url, event, {
           ...linkDeps,
+          startupCwd: activePane ? getPaneLinkCwd(activePane.id) : startupCwd,
           runtimeEnvironmentId: activePane
             ? (linkDeps.getRuntimeEnvironmentIdForPane?.(activePane.id) ?? null)
             : null,

@@ -345,6 +345,7 @@ export type TerminalSlice = {
       telemetry?: AgentStartedTelemetry
     }
   >
+  pendingInitialCwdByTabId: Record<string, string>
   /** Queued setup-split requests — when present, TerminalPane creates the
    *  initial pane clean, then splits (vertical or horizontal per user setting)
    *  and runs the command in the new pane so the main terminal stays
@@ -500,6 +501,8 @@ export type TerminalSlice = {
       telemetry?: AgentStartedTelemetry
     }
   ) => void
+  queueTabInitialCwd: (tabId: string, cwd: string) => void
+  consumeTabInitialCwd: (tabId: string) => string | null
   consumeTabStartupCommand: (tabId: string) => {
     command: string
     delivery?: 'terminal-paste'
@@ -569,6 +572,7 @@ export const createTerminalSlice: StateCreator<AppState, [], [], TerminalSlice> 
   canExpandPaneByTabId: {},
   terminalLayoutsByTabId: {},
   pendingStartupByTabId: {},
+  pendingInitialCwdByTabId: {},
   pendingSetupSplitByTabId: {},
   pendingIssueCommandSplitByTabId: {},
   tabBarOrderByWorktree: {},
@@ -1013,6 +1017,8 @@ export const createTerminalSlice: StateCreator<AppState, [], [], TerminalSlice> 
       }
       const nextPendingStartupByTabId = { ...s.pendingStartupByTabId }
       delete nextPendingStartupByTabId[tabId]
+      const nextPendingInitialCwdByTabId = { ...s.pendingInitialCwdByTabId }
+      delete nextPendingInitialCwdByTabId[tabId]
       const nextPendingSetupSplitByTabId = { ...s.pendingSetupSplitByTabId }
       delete nextPendingSetupSplitByTabId[tabId]
       const nextPendingIssueCommandSplitByTabId = { ...s.pendingIssueCommandSplitByTabId }
@@ -1087,6 +1093,7 @@ export const createTerminalSlice: StateCreator<AppState, [], [], TerminalSlice> 
         canExpandPaneByTabId: nextCanExpand,
         terminalLayoutsByTabId: nextLayouts,
         pendingStartupByTabId: nextPendingStartupByTabId,
+        pendingInitialCwdByTabId: nextPendingInitialCwdByTabId,
         pendingSetupSplitByTabId: nextPendingSetupSplitByTabId,
         pendingIssueCommandSplitByTabId: nextPendingIssueCommandSplitByTabId,
         cacheTimerByKey: nextCacheTimer,
@@ -2420,6 +2427,28 @@ export const createTerminalSlice: StateCreator<AppState, [], [], TerminalSlice> 
         }
       }
     }))
+  },
+
+  queueTabInitialCwd: (tabId, cwd) => {
+    set((s) => ({
+      pendingInitialCwdByTabId: {
+        ...s.pendingInitialCwdByTabId,
+        [tabId]: cwd
+      }
+    }))
+  },
+
+  consumeTabInitialCwd: (tabId) => {
+    const pending = get().pendingInitialCwdByTabId[tabId]
+    if (!pending) {
+      return null
+    }
+    set((s) => {
+      const next = { ...s.pendingInitialCwdByTabId }
+      delete next[tabId]
+      return { pendingInitialCwdByTabId: next }
+    })
+    return pending
   },
 
   consumeTabStartupCommand: (tabId) => {
