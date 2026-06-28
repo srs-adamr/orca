@@ -4,8 +4,11 @@ type ClipboardAnchor = {
   href: string
 }
 
+// The drive-letter alternative requires a non-letter boundary before the
+// letter so a URL scheme's trailing char (e.g. the "s" in "https://") is not
+// mistaken for a "X:/..." drive path, which would discard rich paste formatting.
 const WINDOWS_ABSOLUTE_PATH_PATTERN =
-  /(?:[A-Za-z]:[\\/][^\s<>"|?*\r\n]+|\\\\[^\s\\/:*?"<>|\r\n]+\\[^\s\\/:*?"<>|\r\n]+(?:\\[^\s<>"|?*\r\n]+)*)/g
+  /(?:(?<![A-Za-z])[A-Za-z]:[\\/][^\s<>"|?*\r\n]+|\\\\[^\s\\/:*?"<>|\r\n]+\\[^\s\\/:*?"<>|\r\n]+(?:\\[^\s<>"|?*\r\n]+)*)/g
 
 function readClipboardText(event: ClipboardEvent, type: string): string {
   return event.clipboardData?.getData(type) ?? ''

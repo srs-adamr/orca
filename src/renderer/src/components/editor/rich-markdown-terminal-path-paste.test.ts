@@ -68,6 +68,16 @@ describe('rich markdown terminal path paste', () => {
     ).toBe(false)
   })
 
+  it('does not treat a bare-domain auto-linked URL as a Windows drive path', () => {
+    expect(
+      shouldPasteTerminalWindowsPathAsPlainText({
+        plainText: 'Heading\n\nVisit https://acme.com for details.',
+        htmlText:
+          '<h1>Heading</h1><p>Visit <a href="https://acme.com">https://acme.com</a> for details.</p>'
+      })
+    ).toBe(false)
+  })
+
   it('inserts the plain clipboard text before TipTap can preserve broken link metadata', () => {
     const { editor, inserted } = makeEditor()
     const text = 'C:\\Users\\neil\\.claude\\CLAUDE.md'
