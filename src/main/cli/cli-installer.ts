@@ -823,7 +823,7 @@ export class CliInstaller {
       return
     }
     entries.push(pathDirectory)
-    await this.userPathWriter(entries.join(';'))
+    await this.writeWindowsUserPathEntry(entries.join(';'), pathDirectory, 'add')
   }
 
   private async removeWindowsPathEntry(pathDirectory: string): Promise<void> {
@@ -834,7 +834,33 @@ export class CliInstaller {
     const nextEntries = splitPathEntries('win32', current).filter(
       (entry) => !samePathEntry('win32', entry, pathDirectory)
     )
-    await this.userPathWriter(nextEntries.join(';'))
+    await this.writeWindowsUserPathEntry(nextEntries.join(';'), pathDirectory, 'remove')
+  }
+
+  // Why: the raw `Command failed: powershell ...` rejection is dumped verbatim
+  // into the renderer toast (CliSection), so translate a denied user-PATH write
+  // into an actionable message naming the exact folder to add manually. The
+  // original error stays chained on `cause` so logs keep the diagnostic detail.
+  private async writeWindowsUserPathEntry(
+    value: string,
+    pathDirectory: string,
+    action: 'add' | 'remove'
+  ): Promise<void> {
+    try {
+      await this.userPathWriter(value)
+    } catch (error) {
+      if (!isWindowsUserPathPermissionError(error)) {
+        throw error
+      }
+      const guidance =
+        action === 'add'
+          ? `Add this folder to your PATH manually: ${pathDirectory}. Or run Orca as an administrator and try again.`
+          : `Remove this folder from your PATH manually: ${pathDirectory}. Or run Orca as an administrator and try again.`
+      throw new Error(
+        `Windows blocked updating your user PATH (access denied). This usually means your PATH environment variable is managed by Group Policy or your organization's device management. ${guidance}`,
+        { cause: error }
+      )
+    }
   }
 }
 
@@ -1035,6 +1061,29 @@ function isPermissionError(error: unknown): boolean {
 function isMissingError(error: unknown): boolean {
   return (
     error instanceof Error && 'code' in error && (error as NodeJS.ErrnoException).code === 'ENOENT'
+  )
+}
+
+// Why: Windows refuses user-environment writes (Group Policy / restricted HKCU
+// ACL / EDR-managed env) with a localized message that can arrive as mojibake,
+// so detection keys off the Latin PowerShell error envelope tokens
+// (FullyQualifiedErrorId, MethodInvocationException) that stay readable
+// regardless of the OS display language, plus stable English ACL substrings.
+function isWindowsUserPathPermissionError(error: unknown): boolean {
+  if (!(error instanceof Error)) {
+    return false
+  }
+  const stderr =
+    'stderr' in error && typeof (error as { stderr?: unknown }).stderr === 'string'
+      ? (error as { stderr: string }).stderr
+      : ''
+  const haystack = `${error.message}\n${stderr}`
+  return (
+    haystack.includes('UnauthorizedAccessException') ||
+    haystack.includes('MethodInvocationException') ||
+    haystack.includes('Requested registry access is not allowed') ||
+    haystack.includes('Access is denied') ||
+    haystack.includes('Access to the registry key')
   )
 }
 

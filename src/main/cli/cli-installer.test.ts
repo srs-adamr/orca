@@ -346,6 +346,60 @@ describe('CliInstaller', () => {
     expect(userPath).not.toContain(join(fixture.root, 'Programs', 'Orca', 'bin'))
   })
 
+  it('rejects with a friendly message when Windows blocks the user PATH write', async () => {
+    const fixture = await makeFixture()
+    const installPath = join(fixture.root, 'Programs', 'Orca', 'bin', 'orca.cmd')
+    const installer = new CliInstaller({
+      platform: 'win32',
+      isPackaged: false,
+      userDataPath: fixture.userDataPath,
+      execPath: 'C:\\Users\\me\\AppData\\Local\\Orca\\Orca.exe',
+      appPath: fixture.appPath,
+      commandPathOverride: installPath,
+      userPathReader: async () => 'C:\\Windows\\System32',
+      userPathWriter: async () => {
+        // Mirrors the PowerShell rejection envelope when HKCU\Environment is
+        // locked: the inner text may be localized/mojibake, but the Latin
+        // FullyQualifiedErrorId token stays present.
+        const error = new Error(
+          "Command failed: powershell -NoProfile -Command [Environment]::SetEnvironmentVariable('Path', '...', 'User')\nFullyQualifiedErrorId : UnauthorizedAccessException,Microsoft.PowerShell.Commands"
+        )
+        Object.assign(error, { code: 1 })
+        throw error
+      }
+    })
+
+    const result = installer.install()
+    await expect(result).rejects.toThrow(/access denied|Group Policy|manually/i)
+    await expect(result).rejects.not.toThrow(/Command failed: powershell/)
+    await expect(result).rejects.toMatchObject({
+      cause: expect.objectContaining({
+        message: expect.stringContaining('UnauthorizedAccessException')
+      })
+    })
+  })
+
+  it('propagates a non-permission Windows PATH write error unchanged', async () => {
+    const fixture = await makeFixture()
+    const installPath = join(fixture.root, 'Programs', 'Orca', 'bin', 'orca.cmd')
+    const installer = new CliInstaller({
+      platform: 'win32',
+      isPackaged: false,
+      userDataPath: fixture.userDataPath,
+      execPath: 'C:\\Users\\me\\AppData\\Local\\Orca\\Orca.exe',
+      appPath: fixture.appPath,
+      commandPathOverride: installPath,
+      userPathReader: async () => 'C:\\Windows\\System32',
+      userPathWriter: async () => {
+        throw new Error('Windows PATH command timed out after 5000ms.')
+      }
+    })
+
+    await expect(installer.install()).rejects.toThrow(
+      'Windows PATH command timed out after 5000ms.'
+    )
+  })
+
   it('settles when the Windows PATH query hangs', async () => {
     vi.useFakeTimers()
     const fixture = await makeFixture()
