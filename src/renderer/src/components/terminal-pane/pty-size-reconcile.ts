@@ -17,6 +17,13 @@
 // still forwarded; once the pane is authoritative and the grid has been stable,
 // it stops and hands off to the live onResize path, which catches any later
 // layout change. A hard frame cap guarantees termination.
+//
+// This loop tracks what it last SENT, not what the PTY actually applied, so a
+// forward dropped main-side (e.g. a mobile take-back resize-suppression window)
+// can still leave the PTY stale here. The visibility-resume re-assert in
+// pty-connection.ts is the backstop: on show it reads the PTY's real size
+// (pty:getSize) and re-forwards on true drift, healing a pane that later
+// hides/shows.
 
 export type PtySizeReconcileDimensions = { cols: number; rows: number }
 

@@ -1185,6 +1185,7 @@ export function registerPtyHandlers(
   ipcMain.removeHandler('pty:hasChildProcesses')
   ipcMain.removeHandler('pty:getForegroundProcess')
   ipcMain.removeHandler('pty:getCwd')
+  ipcMain.removeHandler('pty:getSize')
   ipcMain.removeHandler('pty:declarePendingPaneSerializer')
   ipcMain.removeHandler('pty:settlePaneSerializer')
   ipcMain.removeHandler('pty:clearPendingPaneSerializer')
@@ -3237,6 +3238,21 @@ export function registerPtyHandlers(
       return ''
     }
   })
+
+  // Why: the renderer forwards resizes fire-and-forget and otherwise has no way
+  // to learn the PTY's actual size. A resize dropped main-side (suppression
+  // window, mobile-driver gate, or a provider no-op) leaves the renderer
+  // believing it synced when it did not, so a later same-cols layout never
+  // re-forwards and the TUI stays garbled. Exposing the last APPLIED size lets
+  // the renderer detect true drift on resume and re-assert. ptySizes is only
+  // written when a resize actually lands (and at spawn), so it is the
+  // authoritative "what the PTY believes it is".
+  ipcMain.handle(
+    'pty:getSize',
+    (_event, args: { id: string }): { cols: number; rows: number } | null => {
+      return ptySizes.get(args.id) ?? null
+    }
+  )
 
   // Why: pre-signal handshake handlers. See
   // docs/mobile-prefer-renderer-scrollback.md and the rationale on

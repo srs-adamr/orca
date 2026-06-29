@@ -2292,6 +2292,52 @@ export function connectPanePty(
     })
   }
 
+  // Why: the renderer forwards resizes fire-and-forget and dedupes on the size
+  // it *last sent*, so a resize dropped main-side (it was hidden, a suppression
+  // window, or a provider no-op) leaves xterm and the PTY silently diverged —
+  // and a later same-cols layout fires no onResize, so it never self-corrects
+  // ("resizing sometimes doesn't fix it"). On becoming visible, re-fit and
+  // compare xterm against the PTY's ACTUAL size (not what we think we sent); if
+  // they truly differ, re-assert. Gated on real drift so we emit no spurious
+  // SIGWINCH (which would jar alt-screen TUIs) on an already-synced resume.
+  let reassertingPtySizeOnResume = false
+  const reassertPtySizeOnResume = (): void => {
+    const ptyId = transport.getPtyId()
+    // forwardPtyResize re-checks the visibility/mobile gates at send time, so
+    // here we only need the cheap pre-hop early-outs. Skip remote-runtime PTYs:
+    // their resize goes through a separate viewport channel (not pty:resize), so
+    // the local ptySizes map getSize reads is never populated for them.
+    if (disposed || reassertingPtySizeOnResume || !ptyId || isRemoteRuntimePtyId(ptyId)) {
+      return
+    }
+    reassertingPtySizeOnResume = true
+    void window.api.pty
+      .getSize(ptyId)
+      .then((actual) => {
+        // The pane may have been disposed or rebound to a different PTY during
+        // the async hop; bail if this reconcile no longer owns it.
+        if (disposed || transport.getPtyId() !== ptyId) {
+          return
+        }
+        safeFit(pane)
+        const cols = pane.terminal.cols
+        const rows = pane.terminal.rows
+        if (cols <= 0 || rows <= 0) {
+          return
+        }
+        // Re-assert only on genuine divergence from the PTY's applied size (a
+        // null read = unknown id, treated as "cannot confirm synced" so we
+        // forward once). forwardPtyResize owns the authoritative/mobile gating.
+        if (!actual || actual.cols !== cols || actual.rows !== rows) {
+          forwardPtyResize(cols, rows)
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        reassertingPtySizeOnResume = false
+      })
+  }
+
   // Defer PTY spawn/attach to next frame so FitAddon has time to calculate
   // the correct terminal dimensions from the laid-out container.
   const cancelScheduledConnectFrame = (): void => {
@@ -4556,6 +4602,10 @@ export function connectPanePty(
     // keeps the typing hot path off the listSessions IPC between resumes.
     noteVisibilityResume() {
       livenessRecheckFiredSinceResume = false
+      // Why: re-assert the PTY size on resume so a resize that was dropped while
+      // this pane was hidden self-heals on show, instead of waiting for a manual
+      // resize that may never change xterm's column count.
+      reassertPtySizeOnResume()
     },
     reconcileIfSessionDead,
     dispose() {

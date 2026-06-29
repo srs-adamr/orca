@@ -606,6 +606,7 @@ describe('connectPanePty', () => {
         pty: {
           signal: vi.fn(),
           listSessions: vi.fn().mockResolvedValue([]),
+          getSize: vi.fn().mockResolvedValue(null),
           getMainBufferSnapshot: vi.fn().mockResolvedValue(null),
           getForegroundProcess: vi.fn().mockResolvedValue(null),
           hasChildProcesses: vi.fn().mockResolvedValue(false),
@@ -10744,6 +10745,155 @@ describe('connectPanePty', () => {
       sendTerminalInputThroughPane(pane, 'y')
 
       expect(listSessions).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('PTY size re-assert on visibility resume', () => {
+    // Why: a resize dropped while the pane was hidden (suppression window,
+    // mobile-driver gate, provider no-op) leaves xterm and the PTY silently
+    // diverged. The renderer dedupes on what it *thinks* it sent, so a later
+    // same-cols layout never re-forwards — "resizing sometimes doesn't fix it".
+    // On resume the binding reads the PTY's ACTUAL size and re-asserts only on
+    // real drift. The mock pane's fitAddon has no proposeDimensions, so safeFit
+    // is a no-op and pane.terminal stays at its createPane() default (120x40).
+    async function connectResumablePane(depsOverrides: Record<string, unknown> = {}): Promise<{
+      binding: { noteVisibilityResume: () => void }
+      transport: MockTransport
+      deps: ReturnType<typeof createDeps>
+    }> {
+      const { connectPanePty } = await import('./pty-connection')
+      const transport = createMockTransport('pty-pane-2')
+      transportFactoryQueue.push(transport)
+      const manager = createManager(2)
+      const deps = createDeps({
+        restoredLeafId: LEAF_2,
+        paneTransportsRef: { current: new Map([[1, createMockTransport('pty-pane-1')]]) },
+        ...depsOverrides
+      })
+      const pane = createPane(2)
+      const binding = connectPanePty(pane as never, manager as never, deps as never) as unknown as {
+        noteVisibilityResume: () => void
+      }
+      return { binding, transport, deps }
+    }
+
+    it('re-asserts the current size when the PTY drifted from xterm', async () => {
+      vi.mocked(window.api.pty.getSize).mockResolvedValue({ cols: 80, rows: 24 })
+      const { binding, transport } = await connectResumablePane()
+      transport.resize.mockClear()
+
+      binding.noteVisibilityResume()
+      await flushAsyncTicks()
+
+      // xterm is 120x40 (createPane default), PTY reports 80x24 → re-assert.
+      expect(transport.resize).toHaveBeenCalledWith(120, 40)
+    })
+
+    it('does NOT re-assert when the PTY already matches xterm (no spurious SIGWINCH)', async () => {
+      vi.mocked(window.api.pty.getSize).mockResolvedValue({ cols: 120, rows: 40 })
+      const { binding, transport } = await connectResumablePane()
+      transport.resize.mockClear()
+
+      binding.noteVisibilityResume()
+      await flushAsyncTicks()
+
+      expect(transport.resize).not.toHaveBeenCalled()
+    })
+
+    it('re-asserts when the PTY size is unknown (cannot confirm synced)', async () => {
+      vi.mocked(window.api.pty.getSize).mockResolvedValue(null)
+      const { binding, transport } = await connectResumablePane()
+      transport.resize.mockClear()
+
+      binding.noteVisibilityResume()
+      await flushAsyncTicks()
+
+      expect(transport.resize).toHaveBeenCalledWith(120, 40)
+    })
+
+    it('skips remote-runtime PTYs (their size lives outside the local ptySizes map)', async () => {
+      const getSize = vi.mocked(window.api.pty.getSize)
+      getSize.mockClear()
+      const { connectPanePty } = await import('./pty-connection')
+      const transport = createMockTransport('remote:env-1@@terminal-2')
+      transport.getConnectionId.mockReturnValue(null)
+      transportFactoryQueue.push(transport)
+      const manager = createManager(2)
+      const deps = createDeps({
+        restoredLeafId: LEAF_2,
+        paneTransportsRef: { current: new Map([[1, createMockTransport('pty-pane-1')]]) }
+      })
+      const pane = createPane(2)
+      const binding = connectPanePty(pane as never, manager as never, deps as never) as unknown as {
+        noteVisibilityResume: () => void
+      }
+      transport.resize.mockClear()
+
+      binding.noteVisibilityResume()
+      await flushAsyncTicks()
+
+      // Never even queries size for a remote pane, and never re-asserts.
+      expect(getSize).not.toHaveBeenCalled()
+      expect(transport.resize).not.toHaveBeenCalled()
+    })
+
+    it('does NOT re-assert while a mobile-fit override parks the PTY at phone dims', async () => {
+      const { setFitOverride } = await import('@/lib/pane-manager/mobile-fit-overrides')
+      vi.mocked(window.api.pty.getSize).mockResolvedValue({ cols: 80, rows: 24 })
+      const { binding, transport } = await connectResumablePane()
+      // Park the PTY at phone dims — desktop re-assert must be suppressed.
+      setFitOverride('pty-pane-2', 'mobile-fit', 40, 30)
+      transport.resize.mockClear()
+
+      binding.noteVisibilityResume()
+      await flushAsyncTicks()
+
+      expect(transport.resize).not.toHaveBeenCalled()
+      setFitOverride('pty-pane-2', 'desktop-fit', 0, 0)
+    })
+
+    it('does NOT forward when the pane is hidden again before getSize resolves (stale hop)', async () => {
+      // The load-bearing safety property: a getSize promise resolving AFTER the
+      // pane was re-hidden must not emit a hidden-tab SIGWINCH (which can reset
+      // alt-screen TUIs). Suppression is the send-time visibility re-check.
+      let resolveSize: (v: { cols: number; rows: number } | null) => void = () => {}
+      vi.mocked(window.api.pty.getSize).mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveSize = resolve
+          })
+      )
+      const { binding, transport, deps } = await connectResumablePane()
+      transport.resize.mockClear()
+
+      binding.noteVisibilityResume()
+      // Pane is hidden again while the size query is still in flight.
+      deps.isVisibleRef.current = false
+      resolveSize({ cols: 80, rows: 24 }) // drift — would re-assert if visible
+      await flushAsyncTicks()
+
+      expect(transport.resize).not.toHaveBeenCalled()
+    })
+
+    it('coalesces overlapping resumes into a single size query (re-entrancy guard)', async () => {
+      const getSize = vi.mocked(window.api.pty.getSize)
+      getSize.mockClear()
+      let resolveSize: (v: { cols: number; rows: number } | null) => void = () => {}
+      getSize.mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveSize = resolve
+          })
+      )
+      const { binding } = await connectResumablePane()
+      getSize.mockClear()
+
+      // Two rapid resumes before the first query resolves → only one query.
+      binding.noteVisibilityResume()
+      binding.noteVisibilityResume()
+      expect(getSize).toHaveBeenCalledTimes(1)
+      resolveSize({ cols: 120, rows: 40 })
+      await flushAsyncTicks()
     })
   })
 })

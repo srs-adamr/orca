@@ -861,6 +861,12 @@ const api = {
      *  Returns `''` when the id is unknown or the platform cannot resolve one. */
     getCwd: (id: string): Promise<string> => ipcRenderer.invoke('pty:getCwd', { id }),
 
+    /** The PTY's last APPLIED size (its real winsize), or null if unknown.
+     *  Lets the renderer detect drift after a resize was dropped main-side and
+     *  re-assert, instead of trusting the size it last fired blind. */
+    getSize: (id: string): Promise<{ cols: number; rows: number } | null> =>
+      ipcRenderer.invoke('pty:getSize', { id }),
+
     onData: (
       callback: (data: { id: string; data: string; seq?: number; rawLength?: number }) => void
     ): (() => void) => {

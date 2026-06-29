@@ -305,8 +305,17 @@ describe('registerPtyHandlers', () => {
     mainWindow.webContents.on.mockReset()
     mainWindow.webContents.send.mockReset()
 
+    // Why: mirror real Electron — ipcMain.handle throws on a duplicate channel
+    // unless removeHandler cleared it first. This catches a re-registration
+    // (macOS re-activate / new window) that forgets to remove a handle channel.
     handleMock.mockImplementation((channel: string, handler: (...a: unknown[]) => unknown) => {
+      if (handlers.has(channel)) {
+        throw new Error(`Attempted to register a second handler for '${channel}'`)
+      }
       handlers.set(channel, handler)
+    })
+    removeHandlerMock.mockImplementation((channel: string) => {
+      handlers.delete(channel)
     })
     getPathMock.mockReturnValue('/tmp/orca-user-data')
     existsSyncMock.mockReturnValue(true)
