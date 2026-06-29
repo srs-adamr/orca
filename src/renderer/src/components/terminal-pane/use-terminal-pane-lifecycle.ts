@@ -12,6 +12,7 @@ import {
 import { normalizeDesktopTerminalScrollbackRows } from '../../../../shared/terminal-scrollback-policy'
 import { normalizeTerminalTuiMouseWheelMultiplier } from '@/lib/pane-manager/pane-terminal-mouse-wheel'
 import { buildWindowsPtyCompatibilityOptions } from '@/lib/pane-manager/windows-pty-compatibility'
+import { buildTerminalKeyboardProtocolOptions } from '@/lib/pane-manager/terminal-keyboard-protocol'
 import { useAppStore } from '@/store'
 import {
   createFilePathLinkProvider,
@@ -1244,16 +1245,23 @@ export function useTerminalPaneLifecycle({
           (candidate) => candidate.id === tabId
         )
         const platformInfo = window.api.platform?.get?.()
-        const windowsPtyCompatibilityOptions = buildWindowsPtyCompatibilityOptions({
+        const ptyBackendContext = {
           userAgent: navigator.userAgent,
           osRelease: platformInfo?.osRelease,
           connectionId: getConnectionId(worktreeId),
           cwd: startupCwd,
           shellOverride: currentTab?.shellOverride,
           executionHostId: getExecutionHostIdForWorktree(storeState, worktreeId)
-        })
+        }
+        const windowsPtyCompatibilityOptions =
+          buildWindowsPtyCompatibilityOptions(ptyBackendContext)
+        // Why: local Windows ConPTY CLIs read the Kitty keyboard advertisement but
+        // do not decode CSI-u, so withhold it there to restore Enter/Up/Down nav
+        // (issue #2434); SSH and macOS/Linux panes keep enhanced reporting.
+        const keyboardProtocolOptions = buildTerminalKeyboardProtocolOptions(ptyBackendContext)
         return {
           ...windowsPtyCompatibilityOptions,
+          ...keyboardProtocolOptions,
           fontSize: currentSettings?.terminalFontSize ?? 14,
           fontFamily: buildFontFamily(currentSettings?.terminalFontFamily ?? ''),
           fontWeight: terminalFontWeights.fontWeight,
