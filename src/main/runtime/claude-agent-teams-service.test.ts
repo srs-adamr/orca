@@ -190,6 +190,35 @@ describe('ClaudeAgentTeamsService', () => {
     expect(api.closeTerminal).toHaveBeenLastCalledWith('teammate-2')
   })
 
+  it('keeps the placeholder handle when the respawn split fails', async () => {
+    const { service, teamId, token, leaderPane, api } = createServiceWithLeader()
+    const request = (argv: string[], envPane = leaderPane) =>
+      service.handleTmuxCompat({ teamId, token, envPane, argv }, api)
+
+    await request([
+      'split-window',
+      '-d',
+      '-t',
+      leaderPane,
+      '-h',
+      '-P',
+      '-F',
+      '#{pane_id}',
+      '--',
+      'cat'
+    ])
+
+    vi.mocked(api.splitTerminal).mockRejectedValueOnce(new Error('no space for new pane'))
+    await expect(
+      request(['respawn-pane', '-k', '-t', '%2', '--', 'claude --agent-id a'])
+    ).resolves.toMatchObject({ ok: false, exitCode: 1 })
+
+    // the placeholder terminal is left intact and the fake pane id still resolves.
+    expect(api.closeTerminal).not.toHaveBeenCalled()
+    await request(['kill-pane', '-t', '%2'])
+    expect(api.closeTerminal).toHaveBeenCalledWith('teammate-1')
+  })
+
   it('refuses to respawn the leader pane', async () => {
     const { service, teamId, token, leaderPane, api } = createServiceWithLeader()
 

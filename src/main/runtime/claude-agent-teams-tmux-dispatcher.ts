@@ -160,7 +160,10 @@ export class ClaudeAgentTeamsTmuxDispatcher {
     const origin =
       (pane.splitFromPane ? team.panes.get(pane.splitFromPane) : undefined) ??
       team.panes.get(team.leaderPane)!
-    await api.closeTerminal(pane.handle)
+    // Why: create the replacement before destroying the placeholder so a failed
+    // split leaves the fake pane id pointing at a still-live terminal; on cleanup
+    // failure, discard the new split and keep the placeholder registered.
+    const previousHandle = pane.handle
     const split = await api.splitTerminal(origin.handle, {
       direction: pane.splitDirection ?? 'horizontal',
       command,
@@ -168,6 +171,12 @@ export class ClaudeAgentTeamsTmuxDispatcher {
       envToDelete: ['TERM_PROGRAM', 'ORCA_ATTRIBUTION_SHIM_DIR'],
       activate: false
     })
+    try {
+      await api.closeTerminal(previousHandle)
+    } catch (error) {
+      await api.closeTerminal(split.handle).catch(() => {})
+      throw error
+    }
     pane.handle = split.handle
     return ''
   }
