@@ -26,6 +26,7 @@ import type { PtyConnectionDeps } from './pty-connection-types'
 import { safeFit } from '@/lib/pane-manager/pane-tree-ops'
 import { getFitOverrideForPty, bindPanePtyId } from '@/lib/pane-manager/mobile-fit-overrides'
 import { isPtyLocked } from '@/lib/pane-manager/mobile-driver-state'
+import { reconcilePtySizeAcrossFrames, type PtySizeReconcileHandle } from './pty-size-reconcile'
 import { isPaneReplaying, replayIntoTerminal, replayIntoTerminalAsync } from './replay-guard'
 import {
   nativeWindowsRewriteNeedsFollowupRenderRefresh,
@@ -2250,52 +2251,45 @@ export function connectPanePty(
   // Why: the deferred-rAF fit can spawn the PTY at a stale width when the pane's
   // real (e.g. split/narrower) layout has not settled by the first frame — the
   // PTY is born at the wide window width while xterm later reflows to the pane
-  // width. The corrective onResize is then dropped (cols already matched at fit
-  // time, or isRendererPtyResizeAuthoritative() was false mid-mount), pinning
-  // process.stdout.columns forever and garbling TUIs. Re-fit once layout has
-  // settled and force the PTY to xterm's dimensions; the initial spawn-time sync
-  // is authoritative by definition, so it bypasses the visibility gate (but not
-  // the mobile-fit override, which legitimately parks the PTY at phone dims).
+  // width. The corrective onResize is then dropped (isRendererPtyResizeAuthoritative()
+  // is false mid-mount), pinning process.stdout.columns forever and garbling
+  // TUIs. The reconcile re-fits across frames until the grid settles and forces
+  // the PTY to xterm's dimensions; the spawn-time sync is authoritative by
+  // definition so it bypasses the visibility gate (but not the mobile-fit
+  // override, which legitimately parks the PTY at phone dims). See
+  // pty-size-reconcile.ts for the convergence loop.
+  let ptySizeReconcileHandle: PtySizeReconcileHandle | null = null
   const reconcilePtySizeAfterSpawn = (
     ptyId: string,
     spawnCols: number,
     spawnRows: number
   ): void => {
-    // Why: a single post-spawn frame is not enough — the pane's real layout can
-    // keep changing for several frames (split equalize, sidebar/title reflow),
-    // so a one-shot re-fit can still measure a stale width and leave the PTY
-    // pinned. Poll across frames and forward the settled size to the PTY
-    // whenever it differs from what the PTY was last told, mirroring the
-    // ResizeObserver stability loop. Each resize is gated on an actual change,
-    // so a TUI sees at most a couple of SIGWINCH during startup, not a loop.
-    const MAX_RECONCILE_FRAMES = 12
-    let frame = 0
-    let lastSentCols = spawnCols
-    let lastSentRows = spawnRows
-    const tick = (): void => {
-      if (disposed || transport.getPtyId() !== ptyId) {
-        return
-      }
-      // Mobile legitimately parks the PTY at phone dims; a transient guard
-      // should only skip this frame, not cancel the reconcile window.
-      if (!getFitOverrideForPty(ptyId) && !isPtyLocked(ptyId)) {
+    ptySizeReconcileHandle?.cancel()
+    ptySizeReconcileHandle = reconcilePtySizeAcrossFrames({
+      spawnCols,
+      spawnRows,
+      isAlive: () => !disposed && transport.getPtyId() === ptyId,
+      // Mobile legitimately parks the PTY at phone dims; skip those frames
+      // (neither fit nor forward) instead of cancelling the reconcile window.
+      isParked: () => Boolean(getFitOverrideForPty(ptyId)) || isPtyLocked(ptyId),
+      // Once the renderer resize is authoritative (pane visible), the live
+      // onResize owns future corrections, so the reconcile can hand off after
+      // the grid stabilizes. While hidden it keeps watching for a late settle.
+      isAuthoritative: () => isRendererPtyResizeAuthoritative(),
+      measure: () => {
         safeFit(pane)
         const cols = pane.terminal.cols
         const rows = pane.terminal.rows
-        if (cols > 0 && rows > 0 && (cols !== lastSentCols || rows !== lastSentRows)) {
-          // Initial spawn-time sync is authoritative, so it bypasses the
-          // visibility gate that onResize honors (but not the mobile guards above).
-          transport.resize(cols, rows)
-          lastSentCols = cols
-          lastSentRows = rows
+        return cols > 0 && rows > 0 ? { cols, rows } : null
+      },
+      resize: (cols, rows) => transport.resize(cols, rows),
+      requestFrame: (callback) => requestAnimationFrame(callback),
+      cancelFrame: (handle) => {
+        if (typeof cancelAnimationFrame === 'function') {
+          cancelAnimationFrame(handle)
         }
       }
-      frame += 1
-      if (frame < MAX_RECONCILE_FRAMES) {
-        requestAnimationFrame(tick)
-      }
-    }
-    requestAnimationFrame(tick)
+    })
   }
 
   // Defer PTY spawn/attach to next frame so FitAddon has time to calculate
@@ -4566,6 +4560,10 @@ export function connectPanePty(
     reconcileIfSessionDead,
     dispose() {
       disposed = true
+      // Why: the post-spawn reconcile polls across frames; cancel its pending
+      // rAF so a torn-down pane cannot keep fitting/resizing after disposal.
+      ptySizeReconcileHandle?.cancel()
+      ptySizeReconcileHandle = null
       if (terminalKeyTargetSupportsEvents) {
         terminalKeyTarget.removeEventListener('keydown', onTerminalKeyDown, { capture: true })
       }
