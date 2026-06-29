@@ -2,6 +2,15 @@ type GitCommandRunner = (args: string[]) => Promise<{ stdout: string }>
 
 type GitConfigSnapshot = Map<string, string[]>
 
+// Why: mirror `git config --get`'s exit-1-on-absent-key so an intercepted miss
+// rejects (matching real git) instead of resolving an empty success value.
+export class GitConfigSnapshotKeyNotFoundError extends Error {
+  constructor(key: string) {
+    super(`git config --get found no value for '${key}'`)
+    this.name = 'GitConfigSnapshotKeyNotFoundError'
+  }
+}
+
 function isConfigGetCommand(args: string[]): boolean {
   return args.length === 3 && args[0] === 'config' && args[1] === '--get'
 }
@@ -79,9 +88,13 @@ export function createGitConfigSnapshotRunner(runGit: GitCommandRunner): GitComm
       return runGit(args)
     }
 
-    const values = configSnapshot.get(canonicalizeGitConfigLookupKey(args[2] ?? ''))
+    const key = args[2] ?? ''
+    const values = configSnapshot.get(canonicalizeGitConfigLookupKey(key))
     if (!values?.length) {
-      return { stdout: '' }
+      // Why: real `git config --get` exits non-zero for an absent key (it does
+      // not return empty success), so reject here to stay a faithful drop-in —
+      // callers branch on the rejection just as they would for real git.
+      throw new GitConfigSnapshotKeyNotFoundError(key)
     }
 
     // Why: git config --get resolves multivar keys using the last occurrence.
