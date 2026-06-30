@@ -1170,7 +1170,9 @@
         "ephemeralVm": "ワークスペースごとの環境",
         "chooseRunTarget": "ターゲットを選択",
         "noRunTargets": "このプロジェクトには実行ターゲットが準備されていません。",
-        "perWorkspaceEnvHint": "レシピからオンデマンド環境をプロビジョニングする"
+        "perWorkspaceEnvHint": "レシピからオンデマンド環境をプロビジョニングする",
+        "claudeAccount": "Account",
+        "claudeAccountInheritGlobal": "Inherit global"
       },
       "NewWorkspaceComposerModal": {
         "createWorktree": "ワークツリーを作成する",
@@ -4030,7 +4032,10 @@
           "setParentWorkspace": "親ワークツリーを設定...",
           "workspaceSection": "ワークスペース",
           "primaryDeleteDisabled": "プライマリワークツリーは削除できません。代わりにプロジェクトを削除してください。",
-          "deleteWorktree": "ワークツリーを削除"
+          "deleteWorktree": "ワークツリーを削除",
+          "assignAccountsTo": "Assign Accounts To",
+          "assignAccount": "Assign Account",
+          "inheritGlobalAccount": "Inherit global"
         },
         "WorktreeList": {
           "d880ea0744": "グループを作成し、このプロジェクトをそのグループに移動します。",

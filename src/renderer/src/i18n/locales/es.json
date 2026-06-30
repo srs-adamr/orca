@@ -1170,7 +1170,9 @@
         "ephemeralVm": "Entorno por espacio de trabajo",
         "chooseRunTarget": "Elige objetivo",
         "noRunTargets": "No hay objetivos de ejecución listos para este proyecto.",
-        "perWorkspaceEnvHint": "Proporcione un entorno bajo demanda a partir de una receta"
+        "perWorkspaceEnvHint": "Proporcione un entorno bajo demanda a partir de una receta",
+        "claudeAccount": "Account",
+        "claudeAccountInheritGlobal": "Inherit global"
       },
       "NewWorkspaceComposerModal": {
         "createWorktree": "Crear árbol de trabajo",
@@ -4049,7 +4051,10 @@
           "setParentWorkspace": "Establecer árbol de trabajo padre...",
           "workspaceSection": "Espacio de trabajo",
           "primaryDeleteDisabled": "El árbol de trabajo principal no se puede eliminar. Elimina el proyecto en su lugar.",
-          "deleteWorktree": "Eliminar árbol de trabajo"
+          "deleteWorktree": "Eliminar árbol de trabajo",
+          "assignAccountsTo": "Assign Accounts To",
+          "assignAccount": "Assign Account",
+          "inheritGlobalAccount": "Inherit global"
         },
         "WorktreeList": {
           "d880ea0744": "Crea un grupo y mueve este proyecto a él.",

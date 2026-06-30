@@ -1170,7 +1170,9 @@
         "ephemeralVm": "工作区专属环境",
         "chooseRunTarget": "选择目标",
         "noRunTargets": "此项目还没有可用的运行目标。",
-        "perWorkspaceEnvHint": "根据配方按需创建环境"
+        "perWorkspaceEnvHint": "根据配方按需创建环境",
+        "claudeAccount": "Account",
+        "claudeAccountInheritGlobal": "Inherit global"
       },
       "NewWorkspaceComposerModal": {
         "createWorktree": "创建工作树",
@@ -4030,7 +4032,10 @@
           "setParentWorkspace": "设置父工作树...",
           "workspaceSection": "工作区",
           "primaryDeleteDisabled": "主要工作树无法删除，请改为删除项目。",
-          "deleteWorktree": "删除工作树"
+          "deleteWorktree": "删除工作树",
+          "assignAccountsTo": "Assign Accounts To",
+          "assignAccount": "Assign Account",
+          "inheritGlobalAccount": "Inherit global"
         },
         "WorktreeList": {
           "d880ea0744": "创建一个组并将该项目移入其中。",
