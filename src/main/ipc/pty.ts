@@ -553,6 +553,11 @@ type GetSelectedCodexHomePath = (target?: CodexAccountSelectionTarget) => string
 type PrepareClaudeAuth = (
   target?: ClaudeAccountSelectionTarget
 ) => Promise<ClaudeRuntimeAuthPreparation>
+// Why: synchronous companion to PrepareClaudeAuth — lets the spawn gate know
+// whether a launch is a per-worktree-pinned (injected) account *before*
+// paying for the async prepare/keychain work, so the global switch-block
+// check below can exempt it without weakening the global-selection path.
+type IsInjectedClaudeAccountTarget = (target?: ClaudeAccountSelectionTarget) => boolean
 
 function getCodexSelectionTargetForPty(
   shellPath: string | undefined,
@@ -1259,7 +1264,11 @@ export function registerPtyHandlers(
   store?: Store,
   options?: {
     awaitLocalPtyStartup?: () => Promise<void>
-  }
+  },
+  // Why: appended as a trailing optional param (rather than inserted earlier)
+  // so the ~130 existing positional call sites in tests/wiring do not need
+  // updating; omitting it just means no launch is treated as injected.
+  isInjectedClaudeAccountTarget?: IsInjectedClaudeAccountTarget
 ): void {
   registerRendererLifecycleResetHandlers(mainWindow.webContents)
 
@@ -1931,9 +1940,6 @@ export function registerPtyHandlers(
       await assertFolderWorkspacePtyPathUsable(args.worktreeId)
       const provider = getProvider(args.connectionId)
       const isClaudeLaunch = !args.connectionId && isClaudeLaunchCommand(args.command)
-      if (isClaudeLaunch && isClaudeAuthSwitchInProgress()) {
-        throw new Error('A Claude account switch is in progress. Try again after it finishes.')
-      }
       // Why: runtime-created terminals do not carry renderer-computed
       // projectRuntime, so resolve from worktreeId to honor project Windows runtime.
       const terminalRuntimeOptions =
@@ -1956,9 +1962,24 @@ export function registerPtyHandlers(
         store,
         args.worktreeId
       )
+      // Why: a per-worktree-pinned (injected) Claude account launches against
+      // its own CLAUDE_CONFIG_DIR and never touches the shared ~/.claude
+      // runtime that the global switch-block protects (live-pty-gate.ts) —
+      // the Claude CLI owns that config dir's own token refresh, and Orca
+      // does no proactive materialization for it (doSyncForCurrentSelection
+      // early-returns for injected accounts). An in-progress GLOBAL account
+      // switch must not stall a launch that never reads/writes the shared
+      // runtime, so injected launches are exempt from both switch-block
+      // checks below. The non-injected (global-selection) path — which DOES
+      // read/write the shared runtime — keeps the existing block unchanged.
+      const isInjectedClaudeLaunch =
+        isClaudeLaunch && Boolean(isInjectedClaudeAccountTarget?.(claudeSelectionTarget))
+      if (isClaudeLaunch && !isInjectedClaudeLaunch && isClaudeAuthSwitchInProgress()) {
+        throw new Error('A Claude account switch is in progress. Try again after it finishes.')
+      }
       const claudeAuth =
         isClaudeLaunch && prepareClaudeAuth ? await prepareClaudeAuth(claudeSelectionTarget) : null
-      if (isClaudeLaunch && isClaudeAuthSwitchInProgress()) {
+      if (isClaudeLaunch && !isInjectedClaudeLaunch && isClaudeAuthSwitchInProgress()) {
         throw new Error('A Claude account switch is in progress. Try again after it finishes.')
       }
       if (claudeAuth?.stripAuthEnv && hasClaudeAuthEnvConflict(args.env)) {
@@ -2487,9 +2508,6 @@ export function registerPtyHandlers(
       await assertFolderWorkspacePtyPathUsable(args.worktreeId)
       const provider = getProvider(args.connectionId)
       const isClaudeLaunch = !args.connectionId && isClaudeLaunchCommand(args.command)
-      if (isClaudeLaunch && isClaudeAuthSwitchInProgress()) {
-        throw new Error('A Claude account switch is in progress. Try again after it finishes.')
-      }
       const terminalRuntimeOptions =
         process.platform === 'win32' && !args.connectionId
           ? resolveLocalWindowsTerminalRuntimeOptions({
@@ -2510,9 +2528,19 @@ export function registerPtyHandlers(
         store,
         args.worktreeId
       )
+      // Why: see the matching comment in runtime.setPtyController's spawn
+      // above — an injected (per-worktree-pinned) launch bypasses the shared
+      // ~/.claude runtime entirely, so it is exempt from the global
+      // switch-block. The non-injected (global-selection) path keeps the
+      // existing block unchanged.
+      const isInjectedClaudeLaunch =
+        isClaudeLaunch && Boolean(isInjectedClaudeAccountTarget?.(claudeSelectionTarget))
+      if (isClaudeLaunch && !isInjectedClaudeLaunch && isClaudeAuthSwitchInProgress()) {
+        throw new Error('A Claude account switch is in progress. Try again after it finishes.')
+      }
       const claudeAuth =
         isClaudeLaunch && prepareClaudeAuth ? await prepareClaudeAuth(claudeSelectionTarget) : null
-      if (isClaudeLaunch && isClaudeAuthSwitchInProgress()) {
+      if (isClaudeLaunch && !isInjectedClaudeLaunch && isClaudeAuthSwitchInProgress()) {
         throw new Error('A Claude account switch is in progress. Try again after it finishes.')
       }
       if (claudeAuth?.stripAuthEnv && hasClaudeAuthEnvConflict(args.env)) {
@@ -3584,7 +3612,8 @@ export function registerHeadlessPtyRuntime(
   getSelectedCodexHomePath?: GetSelectedCodexHomePath,
   getSettings?: () => GlobalSettings,
   prepareClaudeAuth?: PrepareClaudeAuth,
-  store?: Store
+  store?: Store,
+  isInjectedClaudeAccountTarget?: IsInjectedClaudeAccountTarget
 ): void {
   // Why: headless `orca serve` has no renderer window, but the runtime still
   // needs the same PTY controller and provider listeners as desktop so remote
@@ -3603,7 +3632,9 @@ export function registerHeadlessPtyRuntime(
     getSelectedCodexHomePath,
     getSettings,
     prepareClaudeAuth,
-    store
+    store,
+    undefined,
+    isInjectedClaudeAccountTarget
   )
 }
 

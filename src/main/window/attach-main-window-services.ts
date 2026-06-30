@@ -59,7 +59,11 @@ export function attachMainWindowServices(
     awaitLocalPtyStartup?: () => Promise<void>
     onBeforeRendererReload?: (args: { webContentsId: number; ignoreCache: boolean }) => void
     onBeforeUpdateQuit?: () => void | Promise<void>
-  }
+  },
+  // Why: synchronous companion to prepareClaudeAuth — exempts per-worktree-
+  // pinned (injected) Claude launches from the global account-switch block,
+  // since they never touch the shared ~/.claude runtime that block protects.
+  isInjectedClaudeAccountTarget?: (target?: ClaudeAccountSelectionTarget) => boolean
 ): void {
   registerAppReloadHandler(mainWindow, options?.onBeforeRendererReload)
   registerRepoHandlers(mainWindow, store)
@@ -77,7 +81,8 @@ export function attachMainWindowServices(
     store,
     {
       awaitLocalPtyStartup: options?.awaitLocalPtyStartup
-    }
+    },
+    isInjectedClaudeAccountTarget
   )
   // Why: the Manage Sessions settings panel (docs/daemon-staleness-ux.md §Phase 1)
   // uses a narrow `pty:management:*` IPC surface that reads the live
