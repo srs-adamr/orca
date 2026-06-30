@@ -1267,6 +1267,7 @@ describe('registerPtyHandlers', () => {
           ...args.settings
         }
         return {
+          getWorktreeMeta: vi.fn(),
           getRepo: vi.fn((repoId: string) =>
             repoId === 'repo-1' ? { id: 'repo-1', path: 'C:\\repo' } : undefined
           ),
@@ -2015,6 +2016,7 @@ describe('registerPtyHandlers', () => {
           id: 'ssh-pty'
         }))
         const store = {
+          getWorktreeMeta: vi.fn(),
           upsertSshRemotePtyLease: vi.fn(),
           persistPtyBinding: vi.fn()
         }
@@ -3859,6 +3861,7 @@ describe('registerPtyHandlers', () => {
       }): Promise<{ id: string }>
     }
     const store = {
+      getWorktreeMeta: vi.fn(),
       persistPtyBinding: vi.fn()
     }
     let controller: RuntimeSpawnController | null = null
@@ -3947,6 +3950,7 @@ describe('registerPtyHandlers', () => {
       getProfiles: vi.fn()
     } as never)
     const store = {
+      getWorktreeMeta: vi.fn(),
       persistPtyBinding: vi.fn()
     }
     let controller: RuntimeSpawnController | null = null
@@ -4061,6 +4065,7 @@ describe('registerPtyHandlers', () => {
       getProfiles: vi.fn()
     } as never)
     const store = {
+      getWorktreeMeta: vi.fn(),
       persistPtyBinding: vi.fn()
     }
     let controller: RuntimeSpawnController | null = null
@@ -4207,6 +4212,7 @@ describe('registerPtyHandlers', () => {
       getProfiles: vi.fn()
     } as never)
     const store = {
+      getWorktreeMeta: vi.fn(),
       persistPtyBinding: vi.fn()
     }
     let controller: RuntimeSpawnController | null = null
@@ -4302,6 +4308,7 @@ describe('registerPtyHandlers', () => {
       getProfiles: vi.fn()
     } as never)
     const store = {
+      getWorktreeMeta: vi.fn(),
       upsertSshRemotePtyLease: vi.fn(),
       persistPtyBinding: vi.fn(),
       removeSshRemotePtyLease: vi.fn(),
@@ -4376,6 +4383,7 @@ describe('registerPtyHandlers', () => {
       }): Promise<{ id: string }>
     }
     const store = {
+      getWorktreeMeta: vi.fn(),
       persistPtyBinding: vi.fn()
     }
     let controller: RuntimeSpawnController | null = null
@@ -4459,6 +4467,7 @@ describe('registerPtyHandlers', () => {
       getProfiles: vi.fn()
     } as never)
     const store = {
+      getWorktreeMeta: vi.fn(),
       upsertSshRemotePtyLease: vi.fn(),
       persistPtyBinding: vi.fn(),
       removeSshRemotePtyLease: vi.fn(),
@@ -4558,6 +4567,7 @@ describe('registerPtyHandlers', () => {
       getProfiles: vi.fn()
     } as never)
     const store = {
+      getWorktreeMeta: vi.fn(),
       upsertSshRemotePtyLease: vi.fn(),
       persistPtyBinding: vi.fn()
     }
@@ -4662,6 +4672,7 @@ describe('registerPtyHandlers', () => {
       getProfiles: vi.fn()
     } as never)
     const store = {
+      getWorktreeMeta: vi.fn(),
       upsertSshRemotePtyLease: vi.fn(),
       persistPtyBinding: vi.fn(() => {
         throw new Error('disk full')
@@ -4757,6 +4768,7 @@ describe('registerPtyHandlers', () => {
       getProfiles: vi.fn()
     } as never)
     const store = {
+      getWorktreeMeta: vi.fn(),
       upsertSshRemotePtyLease: vi.fn(),
       persistPtyBinding: vi.fn(),
       removeSshRemotePtyLease: vi.fn(),
@@ -4856,6 +4868,7 @@ describe('registerPtyHandlers', () => {
       getProfiles: vi.fn()
     } as never)
     const store = {
+      getWorktreeMeta: vi.fn(),
       upsertSshRemotePtyLease: vi.fn(),
       persistPtyBinding: vi.fn(() => {
         throw new Error('disk full')
