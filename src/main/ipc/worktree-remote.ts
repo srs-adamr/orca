@@ -1779,7 +1779,8 @@ export async function createRemoteWorktree(
       ? { linkedAzureDevOpsPR: args.linkedAzureDevOpsPR }
       : {}),
     ...(args.linkedGiteaPR !== undefined ? { linkedGiteaPR: args.linkedGiteaPR } : {}),
-    ...(args.workspaceStatus !== undefined ? { workspaceStatus: args.workspaceStatus } : {})
+    ...(args.workspaceStatus !== undefined ? { workspaceStatus: args.workspaceStatus } : {}),
+    ...(args.claudeAccountId !== undefined ? { claudeAccountId: args.claudeAccountId } : {})
   }
   const { worktree } = timing.timeSync('persist_metadata', () => {
     const meta = store.setWorktreeMeta(worktreeId, metaUpdates)
@@ -2354,7 +2355,8 @@ export async function createLocalWorktree(
       ? { linkedAzureDevOpsPR: args.linkedAzureDevOpsPR }
       : {}),
     ...(args.linkedGiteaPR !== undefined ? { linkedGiteaPR: args.linkedGiteaPR } : {}),
-    ...(args.workspaceStatus !== undefined ? { workspaceStatus: args.workspaceStatus } : {})
+    ...(args.workspaceStatus !== undefined ? { workspaceStatus: args.workspaceStatus } : {}),
+    ...(args.claudeAccountId !== undefined ? { claudeAccountId: args.claudeAccountId } : {})
   }
   const { worktree } = timing.timeSync('persist_metadata', () => {
     const meta = store.setWorktreeMeta(worktreeId, metaUpdates)
